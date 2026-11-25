@@ -1,0 +1,26 @@
+[package]
+name = "deskpilot-launcher"
+version = "1.0.0"
+edition = "2021"
+default-run = "deskpilot"
+autobins = false
+
+[[bin]]
+name = "deskpilot"
+path = "src/bin/command-center.rs"
+
+[dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation","Win32_Graphics_Gdi","Win32_NetworkManagement_IpHelper","Win32_Security","Win32_Security_Cryptography","Win32_Security_WinTrust","Win32_System_Diagnostics_ToolHelp","Win32_System_JobObjects","Win32_System_Threading","Win32_System_Registry","Win32_System_LibraryLoader","Win32_System_Memory","Win32_UI_WindowsAndMessaging","Win32_UI_Input_KeyboardAndMouse","Win32_UI_Shell","Win32_UI_Controls"] }
+# wry 0.57 requires gtk 0.18; gtk 0.18's semver excludes glib 0.20.
+wry = { version = "=0.57.3", default-features = false, features = ["os-webview"] }
+raw-window-handle = "0.6"
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>DeskPilot</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,__ICON__">
+<style>
+:root{color-scheme:dark;--bg:#1d2425;--surface:#252e2f;--side:#232b2c;--line:#3a4442;--text:#f0f2ec;--muted:#a5afaa;--soft:#c7d0c9;--on:#c4eb9b;--danger:#f5a098;--r:11px;font:14px/1.5 "Segoe UI Variable Text","Segoe UI",Arial,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}body{height:100vh;overflow:hidden}button,input{font:inherit}button{cursor:pointer;color:inherit}button:disabled{cursor:default;opacity:.42}button:focus-visible,input:focus-visible{outline:2px solid var(--on);outline-offset:3px}svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.shell{max-width:1160px;height:100vh;min-height:0;position:relative;margin:0 auto;background:var(--bg);border-left:1px solid #46504d;border-right:1px solid #46504d;display:flex;flex-direction:column;overflow:hidden}
+.top{height:62px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--line)}
+.wordmark{font-family:"Segoe UI Variable Display","Segoe UI",Arial,sans-serif;font-size:24px;font-weight:800;letter-spacing:-1.35px;color:#f8faf7;line-height:1}.wordmark em{font-style:italic;color:#c2f463;font-weight:800}
+.top-right{display:flex;align-items:center;gap:16px}.meta{color:var(--muted);font-size:11px}.top-right .meta{font:10px Consolas,monospace;letter-spacing:.09em}
+.icon-button{width:38px;height:36px;display:grid;place-items:center;border:1px solid #505b57;border-radius:8px;background:transparent;color:#d2d9d1}.icon-button:hover{background:#2b3534;border-color:#748078}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;flex:1;min-height:420px}
+.map{position:relative;display:flex;flex-direction:column;padding:24px 24px 20px;background-image:radial-gradient(#68736c44 .8px,transparent .8px);background-size:20px 20px;min-width:0}
+.eyebrow{font:10px Consolas,monospace;color:#a8b2a9;letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px}
+.map-heading{font-size:27px;font-weight:510;letter-spacing:-.9px;line-height:1.2;margin:0 0 4px}.intro{color:var(--muted);font-size:12px}
+.diagram{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:42px;align-items:start;margin:36px auto 0;width:min(100%,610px);padding-bottom:22px}
+.wire{position:absolute;top:52px;left:22%;right:22%;height:2px;background:repeating-linear-gradient(90deg,#7b8584 0 6px,transparent 6px 12px);transition:background .2s}
+.wire:after{content:"";position:absolute;left:calc(50% - 6px);top:-5px;width:10px;height:10px;border:2px solid #89928e;border-radius:50%;background:var(--bg);z-index:2}
+.node{position:relative;z-index:1;text-align:center;min-width:0}.node-icon{width:104px;height:104px;margin:auto;border:1px solid #56625f;border-radius:18px;background:#252e2f;display:grid;place-items:center;color:#cbd4cc;transition:border-color .2s,background .2s,box-shadow .2s}
+.node-icon svg{width:43px;height:43px;stroke-width:1.35}.node strong{display:block;margin-top:10px;font-size:15px;font-weight:650}.node small{font:10px Consolas,monospace;color:#a7b1ad;letter-spacing:.07em}
+.node-icon.client{background:#252e2f}.node-icon.host{background:#252e2f}
+.tunnel-caption{text-align:center;margin:0 0 0;font:10px Consolas,monospace;color:#a8b2a9;text-transform:uppercase;letter-spacing:.12em}
+.live .wire{background:var(--on);box-shadow:0 0 10px #c4eb9b44}.live .wire:after{background:var(--on);border-color:var(--on);box-shadow:0 0 12px #c4eb9b88}
+.live .node-icon.host{border-color:var(--on);box-shadow:0 0 0 3px #c4eb9b16,0 0 25px #c4eb9b1c}
+.live .node-icon.host svg{color:var(--on)}
+.live .tunnel-caption,.live .state-text{color:var(--on)}
+.live .wire:before{content:"";position:absolute;top:-3px;left:22%;width:7px;height:7px;border-radius:50%;background:#f2ffdc;box-shadow:0 0 10px var(--on);animation:travel 2.4s linear infinite}
+@keyframes travel{from{left:22%}to{left:calc(78% - 7px)}}
+.connect-strip{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #4a5552;background:#252e2e;padding:12px 14px;border-radius:8px;margin-top:auto;min-height:64px}
+.connect-copy{min-width:0}.state-text{display:block;font-size:14px;font-weight:650}.connect-strip .meta{display:block;font-size:11px;margin-top:2px}
+.action{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:0 15px;border:1px solid #4d5b53;border-radius:7px;background:#343e3c;color:#eaf0e8;font-size:12px;font-weight:650;white-space:nowrap;transition:background .16s,border-color .16s,transform .16s}
+.action:hover:not(:disabled){background:#414d48;border-color:#718078}.action:active:not(:disabled){transform:translateY(1px)}
+.action svg{width:16px;height:16px}.action.primary{background:var(--on);border-color:var(--on);color:#263321}.action.primary:hover:not(:disabled){background:#d6f4b9;border-color:#d6f4b9}
+.action.danger{border:1px solid #8d5e59;background:transparent;color:var(--danger)}.action.danger:hover:not(:disabled){background:#452d2c;border-color:#b67870}
+.side{background:var(--side);border-left:1px solid var(--line);padding:22px 19px;min-width:0}
+.side h3{font-size:14px;font-weight:670;margin:0 0 4px}.side .count{margin:0 0 14px;font-size:11px}
+.permission-row{display:flex;align-items:center;gap:10px;min-height:43px;border-top:1px solid #37403f}.permission-row>svg{width:17px;height:17px;color:#abb8b0}.permission-row strong{font-size:12px;font-weight:620;flex:1}
+.switch{width:34px;height:19px;flex:none;position:relative;border:0;border-radius:999px;background:#4c5756;padding:0;transition:background .16s}
+.switch:after{content:"";position:absolute;width:13px;height:13px;left:3px;top:3px;border-radius:50%;background:#f1f4ef;transition:transform .16s}
+.switch[aria-checked=true]{background:#7e9a6a}.switch[aria-checked=true]:after{transform:translateX(15px);background:#243322}
+.key-actions{margin-top:15px;border-top:1px solid #414a46;padding-top:13px;display:flex;align-items:center;justify-content:space-between;gap:8px}.key-actions .meta{font-size:10px;min-width:0}.key-actions .action{min-height:33px;padding:0 12px;background:#343e3c}
+.trail{min-height:60px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:11px 23px}
+.latest{flex:1;min-width:0;display:flex;align-items:center;gap:13px;font-size:11px}.latest time{font:10px Consolas,monospace;color:#a7b2ac;white-space:nowrap}.latest span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e0e6df}
+.kbd{font:10px Consolas,monospace;color:#b9a39e;white-space:nowrap;margin-left:2px}
+.bottom{height:40px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 23px;color:#a2ada6;font:10px Consolas,monospace}
+.text-button{border:0;background:transparent;color:#a2ada6;padding:4px 0;font:inherit;text-decoration:underline;text-underline-offset:3px}.text-button:hover{color:#edf2e9}.text-button:disabled{opacity:.35}
+.drawer{position:absolute;left:18px;right:18px;bottom:104px;z-index:20;max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.38);padding:16px 24px;background:#252e2e}.drawer[hidden]{display:none!important}.drawer-inner{max-width:690px}.drawer h3{font-size:14px;margin:0 0 5px}.drawer p{font-size:11px;color:var(--muted);margin:0 0 12px;max-width:620px}.drawer-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.credential{display:flex;align-items:center;gap:9px;flex:1;min-width:220px;background:#1d2425;border:1px solid #48554e;border-radius:7px;padding:0 11px;height:39px}.credential svg{width:16px;height:16px;color:#aeb9b0}.credential input{min-width:0;flex:1;background:transparent;border:0;outline:0;color:var(--text);font-size:12px}.remember{display:flex;align-items:center;gap:7px;color:#d2d9d1;font-size:11px;margin-top:10px}.remember input{accent-color:var(--on);width:14px;height:14px}.startup-setting{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 14px;border:1px solid #48554e;border-radius:8px;background:#1d2425}.startup-setting strong{display:block;font-size:12px;font-weight:650}.startup-setting small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.startup-setting input{width:38px;height:21px;accent-color:var(--on);flex:none}.settings-status{margin-top:9px;color:var(--muted);font-size:10px}
+.drawer-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.drawer-actions .action{min-height:33px}.drawer-actions .quiet{background:transparent}.drawer-note{margin-top:9px;color:#aab6ae;font-size:10px}.event-list{display:grid;gap:0;margin:9px 0 0;padding:0;list-style:none;max-height:220px;overflow:auto}.event-list li{display:grid;grid-template-columns:82px minmax(0,1fr);gap:12px;padding:8px 0;border-top:1px solid #3a4442;font-size:11px}.event-list time{font:10px Consolas,monospace;color:#a7b2ac}.event-list span{overflow-wrap:anywhere}.empty{font-size:11px;color:var(--muted);padding:12px 0}
+.notice{font-size:11px;color:var(--muted);min-height:0;margin-top:0}.notice:not(:empty){min-height:16px;margin-top:7px}
+@media(max-width:820px){.layout{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);padding:17px 20px}.permission-row{display:inline-flex;width:48%;padding-right:8px}.side .permissions-list{display:flex;flex-wrap:wrap;gap:0 14px}.map{min-height:420px}.top-right .meta{display:none}}
+@media(max-width:560px){.top{padding:0 15px}.map{padding:19px 14px}.diagram{gap:10px;margin-top:32px}.node-icon{width:84px;height:84px}.wire{top:42px}.node strong{font-size:13px}.node small{font-size:9px}.connect-strip{align-items:flex-start;flex-direction:column}.connect-strip .action{width:100%}.trail{flex-wrap:wrap;padding:12px 15px}.latest{flex-basis:100%}.bottom{padding:0 15px;gap:8px;font-size:9px}.side{padding:16px 15px}.permission-row{width:100%}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="top">
+  <div class="wordmark" aria-label="DeskPilot">Desk<em>Pilot</em></div>
+  <div class="top-right"><span class="meta">LOCAL HOST / ON DEMAND</span><button class="icon-button" data-action="settings" aria-label="DeskPilot preferences"><svg><use href="#i-settings"/></svg></button></div>
+</header>
+<div class="layout">
+  <main class="map">
+    <div class="eyebrow">Connection route / 01</div>
+    <h1 class="map-heading">Your private link.</h1>
+    <div class="intro">One tunnel between ChatGPT and your Windows desktop.</div>
+    <div class="diagram">
+      <div class="wire"></div>
+      <div class="node"><div class="node-icon client"><svg><use href="#i-client"/></svg></div><strong>ChatGPT</strong><small>MCP CLIENT</small></div>
+      <div class="node"><div class="node-icon host"><svg><use href="#i-monitor"/></svg></div><strong>This desktop</strong><small>WINDOWS HOST</small></div>
+    </div>
+    <div class="tunnel-caption" data-route>LINK CLOSED · NO ACTIVE SESSION</div>
+    <div class="connect-strip">
+      <div class="connect-copy"><span class="state-text" data-status>Offline</span><span class="meta" data-detail>No active remote session.</span></div>
+      <button class="action primary" data-action="toggle"><svg><use href="#i-power"/></svg><span data-toggle>Start server</span></button>
+    </div>
+    <div class="notice" data-message aria-live="polite"></div>
+  </main>
+  <aside class="side">
+    <h3>Host permissions</h3>
+    <p class="meta count" data-count>0 of 5 allowed</p>
+    <div class="permissions-list" data-perms></div>
+    <div class="key-actions"><span class="meta" data-key-indicator>No key saved</span><button class="action" data-action="key">Manage</button></div>
+  </aside>
+</div>
+<section class="drawer" data-drawer="key" hidden>
+  <div class="drawer-inner">
+    <h3>Runtime credential</h3>
+    <p data-key-description>Credentials are stored locally with Windows DPAPI. The key is never displayed after saving.</p>
+    <div class="drawer-row">
+      <label class="credential"><svg><use href="#i-lock"/></svg><input type="password" data-key-input maxlength="4096" autocomplete="off" spellcheck="false" placeholder="Paste runtime API key"></label>
+    </div>
+    <label class="remember"><input type="checkbox" data-remember checked>Remember on this Windows account with DPAPI</label>
+    <div class="drawer-actions">
+      <button class="action primary" data-action="save-key">Save key</button>
+      <button class="action" data-action="connect-key">Save &amp; open tunnel</button>
+      <button class="action quiet" data-action="forget">Forget saved key</button>
+      <button class="text-button" data-action="close-drawer">Close</button>
+    </div>
+    <div class="drawer-note">Use a runtime API key with Tunnels Read and Use permissions. Do not use an admin key here.</div>
+    <div class="drawer-actions"><button class="text-button" data-action="open-keys">Open OpenAI API key settings</button></div>
+  </div>
+</section>
+<section class="drawer" data-drawer="settings" hidden>
+  <div class="drawer-inner">
+    <h3>DeskPilot preferences</h3>
+    <p>Choose how DeskPilot behaves when you sign in to Windows.</p>
+    <label class="startup-setting">
+      <span><strong>Launch DeskPilot when I sign in</strong><small>Opens quietly in the system tray. The tunnel stays stopped until you click Start server.</small></span>
+      <input type="checkbox" data-startup-toggle aria-label="Launch DeskPilot when I sign in">
+    </label>
+    <div class="settings-status" data-startup-status>Checking Windows startup setting…</div>
+    <div class="drawer-note">Closing the window hides DeskPilot in the tray. Choose Exit DeskPilot from the tray menu to close the app; any active tunnel will be stopped.</div>
+    <div class="drawer-actions"><button class="text-button" data-action="close-drawer">Close</button></div>
+  </div>
+</section>
+<section class="drawer" data-drawer="activity" hidden>
+  <div class="drawer-inner">
+    <h3>Session activity</h3>
+    <p>Recent local launcher events. Secret values and credential contents are never recorded here.</p>
+    <ul class="event-list" data-event-list></ul>
+    <div class="drawer-actions"><button class="action quiet" data-action="logs">Open full log file</button><button class="text-button" data-action="close-drawer">Close</button></div>
+  </div>
+</section>
+<div class="trail">
+  <div class="latest"><time data-latest-time>--:--:--</time><span data-latest-event>Manual startup is active.</span></div>
+  <button class="action danger" data-action="emergency"><svg><use href="#i-stop"/></svg>Emergency stop</button>
+  <span class="kbd">Ctrl Alt Shift F12</span>
+</div>
+<footer class="bottom">
+  <span>127.0.0.1:8080</span>
+  <button class="text-button" data-action="dashboard">Open dashboard ↗</button>
+  <button class="text-button" data-action="activity">Session log</button>
+  <button class="text-button" data-action="tray">Hide to tray</button>
+</footer>
+</div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="11" cy="17" r="2"/></symbol>
+<symbol id="i-client" viewBox="0 0 24 24"><path d="M12 3 21 8v8l-9 5-9-5V8l9-5Z"/><path d="M8 10h8M8 13h5M8 16h8"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4M8 21h8"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10m-6-6a9 9 0 1 0 12 0"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+<symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4M8 21h8"/></symbol>
+<symbol id="i-mouse" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 2v7"/></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.1M10 9h.1M14 9h.1M18 9h.1M6 13h.1M10 13h.1M14 13h.1M18 13h.1M8 16h8"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+</defs></svg>
+<script>
+(function(){
+  const $=function(selector){return document.querySelector(selector);};
+  const names=[["Terminal","i-terminal"],["Files","i-folder"],["Screen","i-screen"],["Mouse","i-mouse"],["Keyboard","i-keyboard"]];
+  let latest=null,drawer="",preview=false,firstRunPrompted=false;
+  const send=function(action,extra){if(window.ipc&&window.ipc.postMessage){window.ipc.postMessage(JSON.stringify(Object.assign({action:action},extra||{})));}};
+  function setDrawer(name){drawer=name;document.querySelectorAll("[data-drawer]").forEach(function(el){el.hidden=el.dataset.drawer!==name;});}
+  function buildPermissions(){const host=$("[data-perms]");if(host.children.length)return;names.forEach(function(item,index){const row=document.createElement("div");row.className="permission-row";const icon=document.createElementNS("http://www.w3.org/2000/svg","svg");const use=document.createElementNS("http://www.w3.org/2000/svg","use");use.setAttribute("href","#"+item[1]);icon.appendChild(use);const label=document.createElement("strong");label.textContent=item[0];const toggle=document.createElement("button");toggle.className="switch";toggle.type="button";toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",item[0]+" access");toggle.dataset.permission=String(index);toggle.setAttribute("aria-checked","false");row.append(icon,label,toggle);host.appendChild(row);});}
+  function eventNode(e){const li=document.createElement("li");const tm=document.createElement("time");tm.textContent=e.time||"";const body=document.createElement("span");body.textContent=e.body||"";li.append(tm,body);return li;}
+  function renderEvents(events){const list=$("[data-event-list]");list.replaceChildren();if(!events||!events.length){const li=document.createElement("li");li.className="empty";li.textContent="No activity recorded yet.";list.appendChild(li);$("[data-latest-time]").textContent="--:--:--";$("[data-latest-event]").textContent="Manual startup is active.";return;}events.slice(-30).reverse().forEach(function(e){list.appendChild(eventNode(e));});const latestEvent=events[events.length-1];$("[data-latest-time]").textContent=latestEvent.time||"";$("[data-latest-event]").textContent=latestEvent.body||"";}
+  function renderState(s){
+    latest=s;preview=!!s.preview;document.body.classList.toggle("preview",preview);
+    if(!preview&&!s.saved&&!s.running&&!firstRunPrompted){firstRunPrompted=true;setDrawer("key");}
+    const shell=$(".shell");shell.classList.toggle("live",!!s.ready);
+    const state=s.preview?"Preview":s.ready?"Connected":s.running?"Connecting":s.state==="error"?"Unavailable":s.external?"Another session":"Offline";
+    $("[data-status]").textContent=state;
+    $("[data-detail]").textContent=s.detail||"No active remote session.";
+    $("[data-route]").textContent=s.ready?"PRIVATE MCP TUNNEL · ACTIVE":s.running?"PRIVATE TUNNEL · HANDSHAKE IN PROGRESS":s.external?"ANOTHER SESSION OWNS THE LOCAL PORT":"LINK CLOSED · NO ACTIVE SESSION";
+    $("[data-toggle]").textContent=s.ready?"Stop server":s.running?"Connecting…":"Start server";
+    $("[data-count]").textContent=names.filter(function(_,i){return !!(s.mask&(1<<i));}).length+" of 5 allowed";
+    const startupToggle=$("[data-startup-toggle]");if(startupToggle){startupToggle.checked=!!s.startupEnabled;startupToggle.disabled=preview;}
+    const startupStatus=$("[data-startup-status]");if(startupStatus){startupStatus.textContent=s.startupEnabled?"Enabled · DeskPilot opens in the tray; the tunnel stays offline.":"Disabled · DeskPilot starts only when you open it.";}
+    $("[data-key-indicator]").textContent=s.saved?"Key saved locally":"No key saved";
+    $("[data-key-description]").textContent=s.saved?"A credential is protected for this Windows account with DPAPI. Enter a new value only if you want to replace it.":"No saved credential. Add a runtime API key; it will be encrypted with Windows DPAPI.";
+    const keyInput=$("[data-key-input]");keyInput.disabled=preview||s.running||s.external;
+    $("[data-remember]").disabled=preview||s.running||s.external;
+    document.querySelectorAll("[data-permission]").forEach(function(btn,i){const on=!!(s.mask&(1<<i));btn.setAttribute("aria-checked",String(on));btn.disabled=preview||s.external;});
+    document.querySelectorAll("[data-action=toggle]").forEach(function(btn){btn.disabled=preview||s.external||(s.running&&!s.ready)||(!s.ready&&!s.hot);});
+    document.querySelectorAll("[data-action=emergency]").forEach(function(btn){btn.disabled=preview||!s.running;});
+    document.querySelectorAll("[data-action=dashboard]").forEach(function(btn){btn.disabled=preview||!s.ready;});
+    document.querySelectorAll("[data-action=tray]").forEach(function(btn){btn.disabled=preview||!s.tray;});
+    document.querySelectorAll("[data-action=forget]").forEach(function(btn){btn.disabled=preview||!s.saved||s.running||s.external;});
+    document.querySelectorAll("[data-action=save-key]").forEach(function(btn){btn.disabled=preview||s.running||s.external;});
+    document.querySelectorAll("[data-action=connect-key]").forEach(function(btn){btn.disabled=preview||s.running||s.external||!s.hot;});
+    document.querySelectorAll("[data-action=logs]").forEach(function(btn){btn.disabled=preview;});
+    if(s.preview){$("[data-message]").textContent="Preview mode — no tunnel or PC controls are changed.";}
+    else if(s.external){$("[data-message]").textContent="Another process owns port 8080. Stop that session before using DeskPilot.";}
+    else if(!s.hot){$("[data-message]").textContent="Emergency hotkey registration failed. Starting is disabled for safety.";}
+    else{$("[data-message]").textContent="";}
+    renderEvents(s.events||[]);
+  }
+  buildPermissions();
+  document.addEventListener("click",function(e){
+    const btn=e.target.closest("button");if(!btn||btn.disabled)return;
+    if(btn.dataset.permission!==undefined){send("permission",{index:Number(btn.dataset.permission)});return;}
+    switch(btn.dataset.action){
+      case "key":setDrawer(drawer==="key"?"":"key");break;
+      case "settings":setDrawer(drawer==="settings"?"":"settings");break;
+      case "activity":setDrawer(drawer==="activity"?"":"activity");break;
+      case "close-drawer":setDrawer("");break;
+      case "toggle":
+        if(latest&&latest.ready){send("stop");}
+        else if(latest&&latest.saved){send("start",{key:"",remember:true});}
+        else{setDrawer("key");}
+        break;
+      case "connect-key":{
+        const key=$("[data-key-input]").value;
+        if(!key&&latest&&latest.saved){send("start",{key:"",remember:true});setDrawer("");}
+        else if(!key){$("[data-message]").textContent="Enter your runtime API key first.";setDrawer("key");}
+        else{send("start",{key:key,remember:$("[data-remember]").checked});$("[data-key-input]").value="";setDrawer("");}
+        break;
+      }
+      case "save-key":{
+        const key=$("[data-key-input]").value;
+        if(!key){$("[data-message]").textContent="Enter a runtime API key first.";break;}
+        if(!$("[data-remember]").checked){$("[data-message]").textContent="Enable DPAPI storage to save a key. You can still connect without saving it.";break;}
+        send("save-key",{key:key,remember:true});$("[data-key-input]").value="";break;
+      }
+      case "forget":
+        if(window.confirm("Remove the saved runtime API key from this Windows account? This does not revoke the key at OpenAI.")){send("forget");setDrawer("");}
+        break;
+      case "emergency":send("emergency");break;
+      case "dashboard":send("dashboard");break;
+      case "open-keys":send("open-keys");break;
+      case "logs":send("logs");break;
+      case "tray":send("tray");break;
+    }
+  });
+  document.addEventListener("change",function(e){if(e.target&&e.target.matches("[data-startup-toggle]")){send("startup",{enabled:e.target.checked});}});
+  window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&e.shiftKey&&e.key==="F12"){e.preventDefault();send("emergency");}});
+  window.openSettings=function(){setDrawer("settings")};
+  window.renderState=renderState;
+  send("ready");
+})();
+</script>
+</body>
+</html>

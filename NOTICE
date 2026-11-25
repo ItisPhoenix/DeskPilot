@@ -1,0 +1,17 @@
+DeskPilot is derived from Desktop Commander.
+
+Upstream project:
+  Desktop Commander
+  https://github.com/wonderwhy-er/DesktopCommanderMCP
+  Original copyright: Copyright (c) 2024-2025 Eduard Ruzga and Desktop Commander Contributors
+  License: MIT (see LICENSE)
+
+DeskPilot-specific modifications:
+  Copyright (c) 2026 DeskPilot contributors
+
+DeskPilot is an independent derivative project. It is not an official OpenAI product and is not affiliated with or endorsed by OpenAI, Microsoft, Eduard Ruzga, or the upstream Desktop Commander maintainers.
+
+Third-party components:
+  The official OpenAI tunnel-client v0.0.21 and Node.js v24.22.3 runtime are downloaded separately by the installer from their respective publishers. When missing, Microsoft WebView2 Runtime is downloaded from Microsoft's official fwlink and installed after Microsoft Corporation Authenticode verification. These components are not bundled in DeskPilot's release archive. Their respective licenses and notices are provided by those publishers; the installer retains the tunnel-client and Node.js license/notice files with the installed runtime.
+
+  Third-party packages included in the MCP server runtime remain under their respective licenses and notices.

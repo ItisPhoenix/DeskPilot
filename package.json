@@ -1,0 +1,111 @@
+{
+  "name": "deskpilot",
+  "version": "1.0.0",
+  "description": "Windows-first private desktop control host for ChatGPT using the OpenAI tunnel client.",
+  "license": "MIT",
+  "author": "DeskPilot contributors",
+  "homepage": "https://github.com/ItisPhoenix/DeskPilot",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ItisPhoenix/DeskPilot.git"
+  },
+  "bugs": "https://github.com/ItisPhoenix/DeskPilot/issues",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "sync-version": "node scripts/sync-version.js",
+    "bump": "node scripts/sync-version.js --bump",
+    "bump:minor": "node scripts/sync-version.js --bump --minor",
+    "bump:major": "node scripts/sync-version.js --bump --major",
+    "clean": "shx rm -rf dist",
+    "build": "npm run clean && tsc && node scripts/build-ui-runtime.cjs",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "start:debug": "node --inspect-brk=9229 dist/index.js",
+    "test": "npm run build && node test/run-all-tests.js",
+    "test:ci": "npm run build && node test/run-ci.js",
+    "build:coverage": "npm run build && tsc -p tsconfig.coverage.json",
+    "test:coverage": "npm run build:coverage && node test/run-coverage.js",
+    "test:integration": "npm run build && node test/integration/run-all-integration-tests.js",
+    "test:managed": "node scripts/test-managed-launcher.mjs && node scripts/test-private-desktop-mcp.mjs",
+    "test:managed-policy": "node scripts/test-managed-launcher.mjs",
+    "test:desktop-input": "node scripts/test-private-desktop-input.mjs",
+    "test:release-layout": "node scripts/test-release-layout.mjs",
+    "scan:secrets": "node scripts/secret-scanner.mjs --worktree",
+    "test:debug": "node --inspect test/run-all-tests.js",
+    "inspector": "npx @modelcontextprotocol/inspector dist/index.js",
+    "launcher:build": "cargo build --release --locked --manifest-path launcher/Cargo.toml --bin deskpilot"
+  },
+  "keywords": [
+    "deskpilot",
+    "windows",
+    "desktop-control",
+    "mcp",
+    "chatgpt",
+    "openai-tunnel",
+    "local-first"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@opendocsg/pdf2md": "0.3.4",
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-image": "^3.31.4",
+    "@tiptap/extension-table": "^3.31.4",
+    "@tiptap/extension-table-cell": "^3.31.4",
+    "@tiptap/extension-table-header": "^3.31.4",
+    "@tiptap/extension-table-row": "^3.31.4",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
+    "@vscode/ripgrep": "^1.15.9",
+    "exceljs": "^4.4.0",
+    "fastest-levenshtein": "^1.0.16",
+    "glob": "14.0.6",
+    "highlight.js": "^11.11.1",
+    "isbinaryfile": "^5.0.4",
+    "markdown-it": "^14.1.0",
+    "md-to-pdf": "^5.2.5",
+    "node-forge": "1.4.4",
+    "open": "^10.2.0",
+    "pdf-lib": "^1.17.1",
+    "pizzip": "^3.2.0",
+    "proper-lockfile": "^4.1.2",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "sharp": "^0.35.5",
+    "tiptap-markdown": "^0.9.0",
+    "unbash": "6.0.1",
+    "unified": "^11.0.5",
+    "unpdf": "~1.8.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.1",
+    "@types/node": "^20.17.24",
+    "@types/node-forge": "1.3.14",
+    "@types/proper-lockfile": "^4.1.4",
+    "c8": "9.1.0",
+    "esbuild": "^0.27.2",
+    "js-tiktoken": "^1.0.21",
+    "jsdom": "^24.1.3",
+    "shx": "^0.3.4",
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "md-to-pdf": {
+      "chokidar": "^4.0.3"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    },
+    "proxy-addr": "^2.0.8",
+    "argparse": "^2.0.1"
+  },
+  "allowScripts": {
+    "@vscode/ripgrep@1.17.0": true,
+    "esbuild@0.27.2": true,
+    "puppeteer@25.18.1": true
+  }
+}

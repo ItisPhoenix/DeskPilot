@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript build output
+dist/
+*.tsbuildinfo
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+.idea
+.history
+
+server.log
+
+# Local planning/documentation directories
+plans/
+planning/
+
+# Test output files
+test/test_output/
+test/samples/*.md
+test/samples/*_images/
+
+# Test files
+test_files/
+test_fix.js
+test_search.js
+.ripgrep-downloads/
+
+# Test reports: junit.xml, results.json, results.tap per runner (test/README.md)
+test-results/
+
+# Local MCP and assistant configuration
+.mcp.json
+.claude/
+
+# Local DeskPilot runtime data and credentials
+runtime-key.dpapi
+permissions.txt
+tunnel-client.yaml
+activity.log
+*.dpapi
+**/tool-history.jsonl
+**/deskpilot-tool-call.log*
+**/config.json.corrupt.*
+**/device.json
+**/identity.json
+**/WebView2/
+**/EBWebView/
+**/puppeteer-cache/
+**/desktop-commander-chrome-profile-*/
+**/puppeteer_dev_chrome_profile-*/
+*.backup-*/
+
+# Rust and release build output
+launcher/target/
+launcher/target-*/
+release/

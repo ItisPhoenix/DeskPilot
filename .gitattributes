@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+src/server.ts text eol=lf
+src/tools/schemas.ts text eol=lf
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.mp4 binary
+*.exe binary
+*.dll binary
+*.node binary

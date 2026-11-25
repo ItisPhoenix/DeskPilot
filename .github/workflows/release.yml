@@ -1,0 +1,262 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deskpilot-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Windows release
+    runs-on: windows-latest
+    timeout-minutes: 75
+    outputs:
+      archive-name: ${{ steps.package.outputs.archive-name }}
+      installer-name: ${{ steps.package.outputs.installer-name }}
+      checksums-name: ${{ steps.package.outputs.checksums-name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24.22.3
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.3
+          cache: npm
+
+      - name: Set up Rust 1.100.0
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1
+        with:
+          workspaces: launcher
+
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json
+          if ($tagVersion -ne $package.version -or $lock.version -ne $package.version -or $lock.packages.''.version -ne $package.version) {
+            throw "Tag, package.json and package-lock.json versions do not match"
+          }
+          $sourceVersion = (Get-Content src/version.ts -Raw) -replace '\s',''
+          if ($sourceVersion -ne "exportconstVERSION='$($package.version)';") { throw "src/version.ts does not match $($package.version)" }
+          $cargo = Select-String -Path launcher/Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if ($cargo.Matches[0].Groups[1].Value -ne $package.version) { throw "launcher/Cargo.toml does not match $($package.version)" }
+          $resource = Get-Content launcher/build.rs -Raw
+          $csv = ($package.version -replace '\.',',') + ',0'
+          if ($resource -notmatch [regex]::Escape($csv) -or $resource -notmatch [regex]::Escape("$($package.version).0")) {
+            throw "launcher/build.rs resource version does not match $($package.version)"
+          }
+
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci
+
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
+      - name: Scan working tree for secrets
+        run: node scripts/secret-scanner.mjs --worktree
+
+      - name: Run project tests
+        run: npm run test:ci
+
+      - name: Test managed launcher policy and credential isolation
+        run: node scripts/test-managed-launcher.mjs
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path launcher/Cargo.toml --all -- --check
+
+      - name: Check native launcher
+        run: cargo check --locked --manifest-path launcher/Cargo.toml --bin deskpilot
+
+      - name: Lint native launcher
+        run: cargo clippy --locked --manifest-path launcher/Cargo.toml --bin deskpilot -- -D warnings
+
+      - name: Install pinned Rust security auditor
+        run: cargo install cargo-audit --version 0.23.0 --locked
+
+      - name: Audit Rust dependencies
+        working-directory: launcher
+        run: cargo audit --file Cargo.lock
+
+      - name: Build native launcher
+        run: cargo build --release --locked --manifest-path launcher/Cargo.toml --bin deskpilot
+
+      - name: Native launcher self-test
+        shell: pwsh
+        run: |
+          & .\launcher\target\release\deskpilot.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "DeskPilot self-test failed with exit code $LASTEXITCODE" }
+          $result = Get-Content (Join-Path $env:LOCALAPPDATA 'DeskPilot\self-test-modern.txt') -Raw
+          if ($result.Trim() -ne 'DPAPI_AND_JOB_PASS') { throw "Unexpected self-test result: $result" }
+
+      - name: Remove development dependencies
+        run: npm prune --omit=dev
+
+      - name: Assemble Windows x64 release artifacts
+        id: package
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $archiveName = "DeskPilot-v$version-windows-x64.zip"
+          $installerName = "Install-DeskPilot-v$version.ps1"
+          $checksumsName = 'SHA256SUMS.txt'
+          $stage = Join-Path $env:RUNNER_TEMP 'DeskPilotRelease'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage, (Join-Path $stage 'server') | Out-Null
+
+          Copy-Item launcher\target\release\deskpilot.exe (Join-Path $stage 'DeskPilot.exe')
+          Copy-Item dist (Join-Path $stage 'server\dist') -Recurse
+          Copy-Item node_modules (Join-Path $stage 'server\node_modules') -Recurse
+          Copy-Item managed-launcher.mjs (Join-Path $stage 'server\managed-launcher.mjs')
+          Copy-Item package.json (Join-Path $stage 'server\package.json')
+          Copy-Item LICENSE, NOTICE, UPSTREAM.md, README.md, PRIVACY.md, SECURITY.md, CONTRIBUTING.md, CHANGELOG.md, PUBLISH.md, RELEASE_NOTES.md, Uninstall-DeskPilot.ps1 (Join-Path $stage)
+          Copy-Item Install-DeskPilot.ps1 (Join-Path $stage $installerName)
+          if (Test-Path docs) { Copy-Item docs (Join-Path $stage 'docs') -Recurse }
+
+          $archive = Join-Path $env:GITHUB_WORKSPACE $archiveName
+          $installer = Join-Path $env:GITHUB_WORKSPACE $installerName
+          $checksums = Join-Path $env:GITHUB_WORKSPACE $checksumsName
+          if (Test-Path $archive) { Remove-Item $archive -Force }
+          if (Test-Path $installer) { Remove-Item $installer -Force }
+          if (Test-Path $checksums) { Remove-Item $checksums -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
+          Copy-Item Install-DeskPilot.ps1 $installer
+          $lines = @(
+            "$((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant())  $archiveName",
+            "$((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant())  $installerName"
+          )
+          Set-Content -LiteralPath $checksums -Value $lines -Encoding ascii
+          "archive-name=$archiveName" | Add-Content $env:GITHUB_OUTPUT
+          "installer-name=$installerName" | Add-Content $env:GITHUB_OUTPUT
+          "checksums-name=$checksumsName" | Add-Content $env:GITHUB_OUTPUT
+          Get-Item $archive, $installer, $checksums | Select-Object Name,Length
+          Get-Content $checksums
+
+      - name: Smoke-test pruned release layout
+        run: node scripts/test-release-layout.mjs (Join-Path $env:RUNNER_TEMP 'DeskPilotRelease')
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deskpilot-windows-release
+          path: |
+            DeskPilot-v*-windows-x64.zip
+            Install-DeskPilot-v*.ps1
+            SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+
+  attest-public:
+    name: Attest public release provenance
+    if: github.event.repository.visibility == 'public'
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: deskpilot-windows-release
+          path: artifacts
+
+      - name: Attest archive provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: artifacts/${{ needs.build.outputs.archive-name }}
+
+      - name: Attest installer provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: artifacts/${{ needs.build.outputs.installer-name }}
+
+  publish-draft:
+    name: Verify and prepare draft release
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: deskpilot-windows-release
+          path: artifacts
+
+      - name: Verify SHA-256 checksums
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem artifacts -Filter 'DeskPilot-v*-windows-x64.zip' | Select-Object -First 1
+          $installer = Get-ChildItem artifacts -Filter 'Install-DeskPilot-v*.ps1' | Select-Object -First 1
+          if (-not $archive -or -not $installer) { throw 'Release artifacts are missing' }
+          $expected = Get-Content artifacts/SHA256SUMS.txt
+          foreach ($file in @($archive, $installer)) {
+            $line = $expected | Where-Object { $_ -match [regex]::Escape("  $($file.Name)$") } | Select-Object -First 1
+            if (-not $line) { throw "No checksum entry for $($file.Name)" }
+            $actual = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne ($line -split '\s+')[0]) { throw "Checksum mismatch for $($file.Name)" }
+          }
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive-name }}
+          INSTALLER_NAME: ${{ needs.build.outputs.installer-name }}
+          CHECKSUMS_NAME: ${{ needs.build.outputs.checksums-name }}
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $archive = Join-Path artifacts $env:ARCHIVE_NAME
+          $installer = Join-Path artifacts $env:INSTALLER_NAME
+          $checksums = Join-Path artifacts $env:CHECKSUMS_NAME
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $archive $installer $checksums --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $tag $archive $installer $checksums --repo $env:GITHUB_REPOSITORY --draft --title "DeskPilot $tag" --notes-file RELEASE_NOTES.md
+          }
+
+      - name: Release summary
+        shell: pwsh
+        env:
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive-name }}
+          INSTALLER_NAME: ${{ needs.build.outputs.installer-name }}
+          CHECKSUMS_NAME: ${{ needs.build.outputs.checksums-name }}
+        run: |
+          Add-Content $env:GITHUB_STEP_SUMMARY "## DeskPilot $env:GITHUB_REF_NAME draft release"
+          Add-Content $env:GITHUB_STEP_SUMMARY ""
+          Add-Content $env:GITHUB_STEP_SUMMARY "- Archive: $env:ARCHIVE_NAME"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- Installer: $env:INSTALLER_NAME"
+          Add-Content $env:GITHUB_STEP_SUMMARY "- Checksums: $env:CHECKSUMS_NAME"
