@@ -10,7 +10,7 @@
  */
 
 import { configManager } from '../dist/config-manager.js';
-import { startProcess } from '../dist/tools/improved-process-tools.js';
+import { startProcess, readProcessOutput, forceTerminate } from '../dist/tools/improved-process-tools.js';
 import { detectAvailableShells, getDefaultShell, isShellAvailable } from '../dist/utils/shell.js';
 import assert from 'assert';
 import os from 'os';
@@ -29,9 +29,20 @@ async function assertCommandRunsIn(shell) {
   assert.strictEqual(config.defaultShell, shell, `defaultShell should be set to ${shell}`);
 
   const result = await startProcess({ command: `echo ${MARKER}`, timeout_ms: 10000 });
-  const text = result.content?.[0]?.text ?? '';
-  assert.strictEqual(result.structuredContent?.shell, shell, `start_process should use ${shell}`);
-  assert(text.includes(MARKER), `Command should run in ${shell} and print ${MARKER}, got: ${text}`);
+  let text = result.content?.[0]?.text ?? '';
+  const pid = result.structuredContent?.pid;
+  try {
+    for (let attempt = 0; attempt < 50 && !text.includes(MARKER); attempt++) {
+      if (!Number.isInteger(pid) || pid <= 0) break;
+      const more = await readProcessOutput({ pid, timeout_ms: 1000 });
+      text += `\n${more.content?.[0]?.text ?? ''}`;
+      if (!text.includes(MARKER)) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.strictEqual(result.structuredContent?.shell, shell, `start_process should use ${shell}`);
+    assert(text.includes(MARKER), `Command should run in ${shell} and print ${MARKER}, got: ${text}`);
+  } finally {
+    if (Number.isInteger(pid) && pid > 0 && !text.includes(MARKER)) await forceTerminate({ pid });
+  }
 }
 
 /**

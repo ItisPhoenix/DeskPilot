@@ -88,7 +88,7 @@ async function run() {
       assert(child.status === 0 && child.result, `loading the config failed (${child.status}): ${child.stderr}`);
       assert.deepStrictEqual(child.result.allowedDirectories, [], `when the replacement failed with nothing readable, allowedDirectories is ${JSON.stringify(child.result.allowedDirectories)} instead of the default []`);
       assert.deepStrictEqual(child.result.blockedCommands, child.result.defaultBlockedCommands, `when the replacement failed with nothing readable, blockedCommands is ${JSON.stringify(child.result.blockedCommands)} instead of the defaults`);
-      assert.strictEqual(child.result.telemetryEnabled, true, 'with no telemetry opt-out in the damaged file, telemetry keeps its default (on)');
+      assert.strictEqual(child.result.telemetryEnabled, false, 'DeskPilot keeps telemetry disabled by default when no setting is readable');
       assert(fs.readFileSync(home.configPath).equals(damaged), 'config.json changed although no copy of it could be kept');
       assert(child.stderr.includes('config.json could not be parsed, and replacing it failed (EBUSY'),
         `the warning should say the replacement failed, and why: ${child.stderr}`);

@@ -46,6 +46,7 @@ planning/
 test/test_output/
 test/samples/*.md
 test/samples/*_images/
+test/integration/test_edit_block_performance/
 
 # Test files
 test_files/

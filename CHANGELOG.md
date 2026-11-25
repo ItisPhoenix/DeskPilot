@@ -55,4 +55,4 @@ Initial source-first Windows release.
 
 ### Verification status
 
-This changelog does not assert that tests, builds, installation checks, or live tunnel acceptance have passed. Release-specific evidence must be recorded and attached to the draft release according to [PUBLISH.md](PUBLISH.md) before promotion.
+Validation was performed locally and manually, not through GitHub Actions. The main suite passed 202/202 tests with 13 reported environment skips; repro passed 16/16; integration passed 3/3. Clean dependency installation, TypeScript and pinned Node 24.22.3 builds, Rust formatting/lint/tests/release build/self-test, installer/uninstaller security suites, managed-runtime checks, isolated desktop input, secret scans, dependency audits, and archive layout smoke checks passed. Exact evidence and unverified clean-machine/live-tunnel items are recorded in [docs/release-validation.md](docs/release-validation.md). The candidate remains a private draft pending owner review.

@@ -101,6 +101,8 @@ DeskPilot v1.0.0 is reviewed through a private source repository and draft GitHu
 - `Install-DeskPilot-v1.0.0.ps1`
 - `SHA256SUMS.txt`
 
+For this draft, automatic GitHub Actions triggers are disabled. Validation is performed locally and manually, with evidence recorded in [docs/release-validation.md](docs/release-validation.md). No GitHub Actions pass is claimed for v1.0.0.
+
 The installer uses the approved stable, non-draft `v1.0.0` assets after promotion within the private repository. Obtain the artifacts and expected checksums from the maintainer through the approved private channel. Do not use unofficial mirrors.
 
 Before running the installer, compare both file hashes with `SHA256SUMS.txt`:

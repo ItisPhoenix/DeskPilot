@@ -2,6 +2,8 @@
 
 DeskPilot v1.0.0 uses a private, source-first repository and a draft GitHub Release for Windows x64 artifacts. This document defines the release gate. A workflow definition or an earlier run is not evidence that the current candidate passed.
 
+The v1.0.0 draft uses an owner-authorized manual release path. Automatic `push`, `pull_request`, and tag triggers are disabled in the retained workflow files; they remain available for future `workflow_dispatch` use. Local validation and manual GitHub CLI asset upload are documented in `docs/release-validation.md`. No GitHub Actions success is claimed.
+
 ## Distribution policy
 
 - Keep the source repository and release private for v1.0.0.

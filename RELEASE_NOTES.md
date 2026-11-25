@@ -30,4 +30,4 @@ Full instructions, account eligibility, costs, limits, troubleshooting, and unin
 
 ## Verification
 
-See `CHANGELOG.md`, `SECURITY.md`, and the GitHub Actions run attached to this draft for the exact validation evidence and remaining limitations. This draft is not a public release.
+Validation for this draft was performed locally and manually, not through GitHub Actions. Exact commands, results, artifact digests, skips, and remaining limitations are recorded in `docs/release-validation.md`, `CHANGELOG.md`, and `SECURITY.md`. This draft is not a public release.
