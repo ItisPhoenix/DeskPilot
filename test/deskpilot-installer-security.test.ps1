@@ -789,6 +789,27 @@ mcp:
         Assert (@($done | Where-Object { $_ -match 'SUCCESS  DeskPilot is installed' }).Count -eq 1) 'Success summary is missing.'
         $failed = @(Get-InstallDisplayFrame -Stage 'Failed' -Detail 'fixture failure' -Percent 100 -Elapsed '00:00:10' -Remaining '00:00:00' -Summary 'FAILED  Installation failed: fixture failure')
         Assert (@($failed | Where-Object { $_ -match 'Installation failed: fixture failure' }).Count -eq 1) 'Failure summary is missing.'
+        $narrow = @(Get-InstallDisplayFrame -Stage 'Downloading pinned releases' -Detail 'A very long download detail that would wrap in a narrow terminal window' -Percent 55 -Elapsed '00:01:05' -Remaining '00:00:48' -Summary 'SUCCESS  A long completion message that must also fit the terminal width' -Width 60)
+        foreach ($line in $narrow) {
+            $visible = [regex]::Replace($line, "$([char]27)\[[0-9;]*m", '')
+            Assert ($visible.Length -le 60) "Display line wrapped at width 60: $visible"
+        }
+        Assert ((Fit-InstallText 'abcdefghijklmnopqrstuvwxyz' 10).Length -eq 10) 'Long display text was not truncated.'
+        Assert ($source -match 'DPRefreshMilliseconds = 500') 'Refresh throttle is missing.'
+        Assert ($source -match 'SetCursorPosition\(0, \$script:DPDisplayTop \+ \$i\)') 'In-place absolute row writes are missing.'
+        Assert ($source -match 'WindowWidth' -and $source -match 'WindowHeight') 'Terminal resize detection is missing.'
+        Assert ($source -match 'Write-InstallProgressFallback') 'Write-Progress fallback is missing.'
+        Assert ($source -match 'DPLastPercent') 'Monotonic percentage guard is missing.'
+        Assert ($source -match '\$lines\[\$i\] -ceq \$script:DPLastLines\[\$i\]') 'Unchanged static rows are not skipped.'
+        Assert ($source -notmatch 'Console\]::Write\(\[Environment\]::NewLine') 'Display writes a newline and would scroll.'
+        Assert ($source -match 'DPConsoleWriteCount') 'Console write telemetry is missing.'
+        Set-InstallStageState 'Downloading pinned releases'
+        Assert ($script:DPStageState['Preparing'] -eq 'done') 'Previous stage was not marked complete.'
+        Assert ($script:DPStageState['Downloading pinned releases'] -eq 'active') 'Current stage is not active.'
+        Assert ($script:DPStageState['Finalizing'] -eq 'pending') 'Future stage was marked complete early.'
+        Set-InstallStageState 'Extracting archive'
+        Assert ($script:DPStageState['Finalizing'] -eq 'pending') 'A sub-operation label prematurely completed all stages.'
+        Assert ($script:DPStageState['Downloading pinned releases'] -eq 'active') 'A sub-operation label changed the active stage.'
         $script:DPForceDisplay = $false
         $script:DPAnsi = $false
     }

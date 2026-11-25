@@ -47,6 +47,19 @@ $script:DPStages = @(
     'Finalizing'
 )
 $script:DPStageState = @{}
+$script:DPRenderWidth = 0
+$script:DPRenderHeight = 0
+$script:DPLastLines = @()
+$script:DPLastStage = ''
+$script:DPLastPercent = -1
+$script:DPLastUpdate = [datetime]::MinValue
+$script:DPFrameCount = 14
+$script:DPMinWidth = 78
+$script:DPMinHeight = 17
+$script:DPRefreshMilliseconds = 500
+$script:DPConsoleWriteCount = 0
+$script:DPDashboardWriteCount = 0
+$script:DPNewlineWriteCount = 0
 
 function Initialize-DeskPilotDisplayState {
     if ($null -eq $script:DPStages) {
@@ -65,31 +78,12 @@ function Initialize-DeskPilotDisplayState {
     if ($null -eq $script:DPFilesDone) { $script:DPFilesDone = 0 }
     if ($null -eq $script:DPFilesTotal) { $script:DPFilesTotal = 0 }
     if ($null -eq $script:DPStageIndex) { $script:DPStageIndex = 0 }
-}
-
-function Initialize-InstallProgress {
-    Initialize-DeskPilotDisplayState
-    $script:InstallProgressStart = [datetime]::Now
-    $script:InstallProgressCompleted = $false
-    $script:InstallProgressFailure = ''
-    $script:DPStageIndex = 0
-    $script:DPFilesDone = 0
-    $script:DPFilesTotal = 0
-    foreach ($stage in $script:DPStages) { $script:DPStageState[$stage] = 'pending' }
-    $script:DPStageState[$script:DPStages[0]] = 'active'
-    $script:DPAnsi = Enable-DeskPilotVirtualTerminal
-    $script:DPDisplayReady = $false
-    if (-not $script:DPForceDisplay) {
-        try {
-            if (-not [Console]::IsOutputRedirected -and [Environment]::UserInteractive) {
-                $script:DPDisplayTop = [Console]::CursorTop
-                [Console]::CursorVisible = $false
-                $script:DPDisplayReady = $true
-                Write-InstallDisplay -Stage $script:DPStages[0] -Detail 'Starting' -Percent 0 -Remaining $null -Summary ''
-            }
-        } catch { $script:DPDisplayReady = $false }
-    }
-    Write-InstallProgress -Stage $script:DPStages[0] -Detail 'Validating environment' -Percent 1 -Remaining $null
+    if ($null -eq $script:DPLastLines) { $script:DPLastLines = @() }
+    if ($null -eq $script:DPLastStage) { $script:DPLastStage = '' }
+    if ($null -eq $script:DPLastPercent) { $script:DPLastPercent = -1 }
+    if ($null -eq $script:DPLastUpdate) { $script:DPLastUpdate = [datetime]::MinValue }
+    if ($null -eq $script:DPRenderWidth) { $script:DPRenderWidth = 0 }
+    if ($null -eq $script:DPRenderHeight) { $script:DPRenderHeight = 0 }
 }
 
 function Enable-DeskPilotVirtualTerminal {
@@ -135,7 +129,8 @@ function Set-InstallStageState([string]$Stage) {
     Initialize-DeskPilotDisplayState
     $index = [Array]::IndexOf($script:DPStages, $Stage)
     if ($index -lt 0) {
-        foreach ($name in $script:DPStages) { $script:DPStageState[$name] = 'done' }
+        # Sub-operation labels (for example "Extracting archive") are detail
+        # text, not completed install stages. Never advance stage markers on them.
         return
     }
     for ($i = 0; $i -lt $script:DPStages.Count; $i++) {
@@ -145,56 +140,153 @@ function Set-InstallStageState([string]$Stage) {
     $script:DPStageIndex = $index
 }
 
-function Get-InstallDisplayFrame([string]$Stage, [string]$Detail, [int]$Percent, [string]$Elapsed, [string]$Remaining, [string]$Summary) {
+function Fit-InstallText([string]$Text, [int]$Maximum) {
+    if ([string]::IsNullOrEmpty($Text) -or $Text.Length -le $Maximum) { return $Text }
+    if ($Maximum -le 3) { return $Text.Substring(0, $Maximum) }
+    return $Text.Substring(0, $Maximum - 3) + '...'
+}
+
+function Get-InstallDisplayFrame([string]$Stage, [string]$Detail, [int]$Percent, [string]$Elapsed, [string]$Remaining, [string]$Summary, [int]$Width = 0) {
     Initialize-DeskPilotDisplayState
     Set-InstallStageState $Stage
     $accent = Get-DeskPilotAccent
     $muted = Get-DeskPilotMuted
     $reset = Get-DeskPilotReset
-    $barWidth = 28
+    $limit = if ($Width -gt 0) { $Width } else { 0 }
+    $detailText = if ($limit -gt 0) { Fit-InstallText $Detail ($limit - 14) } else { $Detail }
+    $summaryText = if ($limit -gt 0) { Fit-InstallText $Summary ($limit - 4) } else { $Summary }
     $value = [Math]::Min(100, [Math]::Max(0, $Percent))
+    $files = if ($script:DPFilesTotal -gt 0) { "$($script:DPFilesDone) / $($script:DPFilesTotal)" } else { '0 / 0' }
+    $metrics = "  $value%   $($muted)|$reset $files files  $($muted)|$reset $elapsed  ETA $Remaining$reset"
+    $metricsVisible = [regex]::Replace($metrics, "$([char]27)\[[0-9;]*m", '').Length
+    $barWidth = if ($limit -gt 0) { [Math]::Max(4, $limit - 4 - $metricsVisible) } else { 28 }
     $filled = [int][Math]::Round($barWidth * $value / 100.0)
     $bar = ('#' * $filled) + ('.' * ($barWidth - $filled))
     $lines = @()
     $lines += "  Desk${accent}Pilot${reset}   $($muted)Installer - v1.0.1 Beta$reset"
-    $lines += '  ' + $accent + ('-' * 72) + $reset
-    $lines += "  ${accent}[$bar]$reset  $value%   $($muted)Elapsed $Elapsed  Remaining $Remaining$reset"
+    $separator = if ($limit -gt 0) { [Math]::Max(8, $limit - 2) } else { 72 }
+    $lines += '  ' + $accent + ('-' * $separator) + $reset
+    $lines += "  ${accent}[$bar]$reset$metrics"
     foreach ($name in $script:DPStages) {
         $state = [string]$script:DPStageState[$name]
         $marker = if ($state -eq 'done') { "${accent}OK$reset" } elseif ($state -eq 'active') { "${accent}>>$reset" } else { "${muted}--$reset" }
         $lines += "  $marker  $name"
     }
-    $lines += "  $($muted)Activity: $Detail$reset"
-    $files = if ($script:DPFilesTotal -gt 0) { "$($script:DPFilesDone) / $($script:DPFilesTotal)" } else { '0 / 0' }
+    $lines += "  $($muted)Activity: $detailText$reset"
     $lines += "  $($muted)Files extracted: $files$reset"
-    $lines += "  $Summary"
+    $lines += "  $summaryText"
     return $lines
 }
 
-function Write-InstallDisplay([string]$Stage, [string]$Detail, [int]$Percent, $Remaining, [string]$Summary) {
+function Write-InstallProgressFallback([string]$Stage, [string]$Detail, [int]$Percent, [string]$Elapsed, [string]$Remaining) {
+    $previous = $ProgressPreference
+    $ProgressPreference = 'Continue'
+    try {
+        $status = if ([string]::IsNullOrWhiteSpace($Detail)) { $Stage } else { "$Stage - $Detail" }
+        Write-Progress -Activity 'DeskPilot installation' -Status $status -CurrentOperation "Elapsed $Elapsed; remaining $Remaining" -PercentComplete ([Math]::Min(100, [Math]::Max(0, $Percent))) -Id 1
+    } finally { $ProgressPreference = $previous }
+}
+
+function Write-InstallDisplay([string]$Stage, [string]$Detail, [int]$Percent, $Remaining, [string]$Summary, [switch]$Force) {
+    Initialize-DeskPilotDisplayState
     $elapsed = if ($null -eq $script:InstallProgressStart) { '00:00:00' } else { Format-InstallDuration ([datetime]::Now - $script:InstallProgressStart) }
     $remainingText = if ($null -eq $Remaining) { 'estimating' } else { Format-InstallDuration $Remaining }
-    $lines = Get-InstallDisplayFrame -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText -Summary $Summary
-    if ($script:DPDisplayReady) {
-        [Console]::SetCursorPosition(0, $script:DPDisplayTop)
+    if ($script:DPDisplayReady -and -not $Force -and -not [string]::IsNullOrEmpty($script:DPLastStage) -and $Percent -lt $script:DPLastPercent) {
+        # A download detail may report a lower base than the overall stage;
+        # never let the displayed percentage jump backwards.
+        $Percent = $script:DPLastPercent
+    }
+    if (-not $script:DPDisplayReady) {
+        if ($script:DPForceDisplay) {
+            foreach ($line in @(Get-InstallDisplayFrame -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText -Summary $Summary)) { Write-Host $line }
+        } else {
+            Write-InstallProgressFallback -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText
+        }
+        return
+    }
+
+    try {
+        $width = [Console]::WindowWidth - 1
+        $height = [Console]::WindowHeight
+    } catch { $script:DPDisplayReady = $false; Write-InstallProgressFallback -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText; return }
+
+    if ($width -lt $script:DPMinWidth -or $height -lt $script:DPMinHeight -or ($script:DPDisplayTop + $script:DPFrameCount) -ge $height) {
+        $script:DPDisplayReady = $false
+        Write-InstallProgressFallback -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText
+        return
+    }
+
+    $lines = @(Get-InstallDisplayFrame -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText -Summary $Summary -Width ($width + 1))
+    $resized = ($width -ne $script:DPRenderWidth -or $height -ne $script:DPRenderHeight)
+    $stageChanged = ($Stage -cne $script:DPLastStage)
+    if (-not $Force -and -not $resized -and -not $stageChanged) {
+        $age = [datetime]::Now - $script:DPLastUpdate
+        if ($age.TotalMilliseconds -lt $script:DPRefreshMilliseconds) { return }
+    }
+    if (-not $resized -and -not $stageChanged -and $lines.Count -eq $script:DPLastLines.Count) {
+        $changed = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -cne $script:DPLastLines[$i]) { $changed = $true; break }
+        }
+        if (-not $changed) { return }
+    }
+
+    # Absolute-positioned writes with no newline: nothing scrolls or bounces.
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if (-not $resized -and $i -lt $script:DPLastLines.Count -and $lines[$i] -ceq $script:DPLastLines[$i]) { continue }
+        $visible = [regex]::Replace($lines[$i], "$([char]27)\[[0-9;]*m", '')
+        $padded = $lines[$i]
+        if ($visible.Length -lt $width) { $padded += ' ' * ($width - $visible.Length) }
+        [Console]::SetCursorPosition(0, $script:DPDisplayTop + $i)
+        [Console]::Write($padded)
+        $script:DPConsoleWriteCount++
+        if ($i -eq 0) { $script:DPDashboardWriteCount++ }
+    }
+    [Console]::SetCursorPosition(0, $script:DPDisplayTop + $lines.Count)
+    $script:DPLastLines = $lines
+    $script:DPLastStage = $Stage
+    $script:DPLastPercent = $Percent
+    $script:DPLastUpdate = [datetime]::Now
+    $script:DPRenderWidth = $width
+    $script:DPRenderHeight = $height
+}
+
+function Initialize-InstallProgress {
+    Initialize-DeskPilotDisplayState
+    $script:InstallProgressStart = [datetime]::Now
+    $script:InstallProgressCompleted = $false
+    $script:InstallProgressFailure = ''
+    $script:DPStageIndex = 0
+    $script:DPFilesDone = 0
+    $script:DPFilesTotal = 0
+    $script:DPLastLines = @()
+    $script:DPLastStage = ''
+    $script:DPLastPercent = -1
+    $script:DPLastUpdate = [datetime]::MinValue
+    $script:DPConsoleWriteCount = 0
+    $script:DPDashboardWriteCount = 0
+    $script:DPNewlineWriteCount = 0
+    foreach ($stage in $script:DPStages) { $script:DPStageState[$stage] = 'pending' }
+    $script:DPStageState[$script:DPStages[0]] = 'active'
+    $script:DPAnsi = Enable-DeskPilotVirtualTerminal
+    $script:DPDisplayReady = $false
+    if (-not $script:DPForceDisplay) {
         try {
-            $width = [Math]::Max(72, [Console]::WindowWidth - 1)
-            foreach ($line in $lines) {
-                $visible = [regex]::Replace($line, "$([char]27)\[[0-9;]*m", '')
-                [Console]::Write($line + (' ' * [Math]::Max(0, $width - $visible.Length)))
-                [Console]::Write([Environment]::NewLine)
+            if (-not [Console]::IsOutputRedirected -and [Environment]::UserInteractive) {
+                $top = [Console]::CursorTop
+                $width = [Console]::WindowWidth - 1
+                $height = [Console]::WindowHeight
+                if ($width -ge $script:DPMinWidth -and $height -ge $script:DPMinHeight -and ($top + $script:DPFrameCount) -lt $height) {
+                    $script:DPDisplayTop = $top
+                    [Console]::CursorVisible = $false
+                    $script:DPRenderWidth = $width
+                    $script:DPRenderHeight = $height
+                    $script:DPDisplayReady = $true
+                }
             }
         } catch { $script:DPDisplayReady = $false }
-    } elseif ($script:DPForceDisplay) {
-        foreach ($line in $lines) { Write-Host $line }
-    } else {
-        $previous = $ProgressPreference
-        $ProgressPreference = 'Continue'
-        try {
-            $status = if ([string]::IsNullOrWhiteSpace($Detail)) { $Stage } else { "$Stage - $Detail" }
-            Write-Progress -Activity 'DeskPilot installation' -Status $status -CurrentOperation "Elapsed $elapsed; remaining $remainingText" -PercentComplete ([Math]::Min(100, [Math]::Max(0, $Percent))) -Id 1
-        } finally { $ProgressPreference = $previous }
     }
+    Write-InstallProgress -Stage $script:DPStages[0] -Detail 'Validating environment' -Percent 1 -Remaining $null
 }
 
 function Write-InstallProgress([string]$Stage, [string]$Detail, [int]$Percent, $Remaining) {
@@ -211,7 +303,7 @@ function Complete-InstallProgress([string]$Message) {
     foreach ($name in $script:DPStages) { $script:DPStageState[$name] = 'done' }
     $accent = Get-DeskPilotAccent
     $reset = Get-DeskPilotReset
-    Write-InstallDisplay -Stage 'Complete' -Detail $Message -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${accent}SUCCESS$reset  $Message"
+    Write-InstallDisplay -Stage 'Complete' -Detail $Message -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${accent}SUCCESS$reset  $Message" -Force
     $script:InstallProgressCompleted = $true
     if (-not $script:DPDisplayReady) {
         $previous = $ProgressPreference
@@ -227,8 +319,7 @@ function Clear-InstallProgress {
     if ($script:InstallProgressCompleted) { return }
     $failure = if ([string]::IsNullOrWhiteSpace($script:InstallProgressFailure)) { 'Installation was not completed.' } else { $script:InstallProgressFailure }
     $red = if ($script:DPAnsi) { "$([char]27)[38;2;255;120;120m" } else { '' }
-    $reset = Get-DeskPilotReset
-    Write-InstallDisplay -Stage 'Failed' -Detail $failure -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${red}FAILED$reset  Installation failed: $failure"
+    Write-InstallDisplay -Stage 'Failed' -Detail $failure -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${red}FAILED$reset  Installation failed: $failure" -Force
     $script:InstallProgressCompleted = $true
     if (-not $script:DPDisplayReady) {
         $previous = $ProgressPreference

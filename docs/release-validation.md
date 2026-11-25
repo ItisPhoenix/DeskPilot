@@ -145,6 +145,7 @@ The authoritative artifact sizes and hashes are recorded in `SHA256SUMS.txt` and
 | Branded terminal display | Rendered in Windows PowerShell and asserted: DeskPilot heading with lime ANSI accent, overall bar and percentage, per-stage OK/active/pending markers, live extracted-file count, elapsed/remaining time, and success/failure summaries; 263 installer security checks pass |
 | Windows runtime root cause | Sanitized `tunnel-client run` stderr showed `fork/exec C:Users...node.exe: The system cannot find the file specified.` with exit 1: v0.0.21 strips backslashes from `mcp.command`. No credential or tunnel-ID values were printed. |
 | Runtime fix and verified startup | Installer writes forward-slash MCP paths; launcher accepts either separator form after exact normalization. With the corrected profile and the locally stored key held in memory only, the real tunnel reached `GET /health` HTTP 200 before the verification process was stopped. 40 Rust tests pass, including redaction of tunnel IDs, keys, and user paths. |
+| Interactive terminal rendering | Driven inside a real Windows Terminal session (not a mock): 81 progress updates produced 1 dashboard write, 62 changed-row writes, 0 newline writes, and all stage markers correct. A 60-column window and a redirected session both fell back cleanly. 291 installer security checks pass. |
 
 ## Not verified for this Beta
 

@@ -20,6 +20,7 @@ Corrected manual patch release replacing the withdrawn v1.0.0 Beta. v1.0.0 remai
 - Replaced the basic progress bars with a branded in-place terminal display: DeskPilot wordmark with lime accents, overall bar and percentage, per-stage completion markers, live extracted file count, elapsed/remaining time, and a success or failure summary. It redraws in place without scrolling and falls back to `Write-Progress` when output is redirected.
 - Fixed the actual runtime tunnel failure: `tunnel-client` v0.0.21 tokenizes `mcp.command` with a shell lexer that strips backslashes, so the absolute Windows `node.exe` path became invalid and the MCP child never started. The installer now writes parser-safe forward-slash paths, and the launcher accepts either separator form after exact normalization, rejecting any other path difference.
 - Runtime failures now report the tunnel-client exit code and a sanitized stderr summary (tunnel IDs, API keys, and user paths are redacted) instead of a generic message.
+- Redesigned the installer terminal experience as a minimal stationary display: white/lime DeskPilot wordmark, one progress bar, accurate file counts, elapsed time and ETA, and subtle stage indicators. Completed stage rows are never rewritten; only changed active rows are drawn, at most twice per second. Narrow windows and redirected output fall back to `Write-Progress`, and the cursor and colors are restored on completion.
 
 ### Verification
 

@@ -20,6 +20,7 @@ DeskPilot is a Windows-first, source-available host for private desktop control 
 - **Windows doctor workaround:** `tunnel-client` v0.0.21 strips Windows path separators during its `mcp_command_executable` preflight. The installer verifies the exact staged `node.exe` for that one check; all other preflight failures still abort before commit.
 - **Branded installer display:** a DeskPilot wordmark with lime accents, an overall progress bar and percentage, completion markers for each stage, a live extracted-file count, elapsed and remaining time, and a clear success or failure summary. The display redraws in place instead of scrolling.
 - **Runtime tunnel fix:** the managed MCP command now uses parser-safe forward-slash paths, so `tunnel-client` can actually launch the packaged Node runtime on Windows. Failures now include the child exit code and a sanitized stderr summary instead of a generic message.
+- **Stationary terminal display:** one progress bar, accurate file counts, elapsed time and ETA, subtle stage indicators, and no scrolling or duplicated dashboards. Only changed active rows update, at most twice per second; narrow or redirected terminals use standard `Write-Progress`.
 
 ## Asset integrity
 
