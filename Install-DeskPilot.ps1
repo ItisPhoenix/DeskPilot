@@ -528,6 +528,15 @@ function Remove-YamlTokenLines([System.Collections.Generic.List[string]]$Lines, 
     }
 }
 
+function Remove-YamlExoticLines([System.Collections.Generic.List[string]]$Lines) {
+    for ($i = $Lines.Count - 1; $i -ge 0; $i--) {
+        $trimmed = $Lines[$i].Trim()
+        if (-not [string]::IsNullOrWhiteSpace($trimmed) -and -not $trimmed.StartsWith('#') -and ($trimmed.StartsWith('"') -or $trimmed.StartsWith("'") -or $trimmed.Contains('{') -or $trimmed.Contains('}'))) {
+            $Lines.RemoveAt($i)
+        }
+    }
+}
+
 function Update-TunnelProfile([string]$ExistingText, [string]$TunnelId, [string]$NodePath, [string]$InstallRoot) {
     if (-not (Test-TunnelId $TunnelId)) { throw 'The tunnel ID does not match the required service format.' }
     $node = Get-CanonicalPath $NodePath
@@ -572,6 +581,7 @@ mcp:
     Remove-YamlTokenLines $lines 'ca_bundle'
     Remove-YamlTokenLines $lines 'http_proxy'
     Remove-YamlTokenLines $lines 'cloudflared'
+    Remove-YamlExoticLines $lines
     Remove-YamlChildValue $lines 'control_plane' 'url_path'
     Remove-YamlChildValue $lines 'control_plane' 'residency'
     Remove-YamlChildValue $lines 'health' 'unix_socket'

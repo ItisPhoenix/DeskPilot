@@ -268,6 +268,18 @@ fn yaml_string_value(profile: &str, section: &str, child: &str) -> Option<String
     serde_json::from_str(yaml_section_value(profile, section, child)?).ok()
 }
 
+fn profile_has_exotic_syntax(profile: &str) -> bool {
+    profile.lines().any(|line| {
+        let trimmed = line.trim();
+        !trimmed.is_empty()
+            && !trimmed.starts_with('#')
+            && (trimmed.starts_with('"')
+                || trimmed.starts_with('\'')
+                || trimmed.contains('{')
+                || trimmed.contains('}'))
+    })
+}
+
 fn profile_has_key(profile: &str, key: &str) -> bool {
     let needle = key.to_ascii_lowercase();
     profile.lines().any(|line| {
@@ -302,6 +314,7 @@ fn profile_uses_trusted_dashboard(profile: &str) -> bool {
         && yaml_section_value(profile, "admin_ui", "allow_remote") == Some("false")
         && yaml_section_value(profile, "admin_ui", "open_browser") == Some("false")
         && yaml_section_value(profile, "admin_ui", "public_origin").is_none()
+        && !profile_has_exotic_syntax(profile)
         && profile_dashboard_base_path(profile).is_some()
 }
 
@@ -315,6 +328,7 @@ fn profile_uses_trusted_control_plane(profile: &str) -> bool {
         && !profile_has_key(profile, "http_proxy")
         && !profile_has_key(profile, "ca_bundle")
         && !profile_has_key(profile, "cloudflared")
+        && !profile_has_exotic_syntax(profile)
 }
 
 fn parse_stable_semver(input: &str) -> Option<String> {
@@ -2078,6 +2092,9 @@ mod tests {
         )));
         assert!(!profile_uses_trusted_control_plane(&format!(
             "{valid}\"cloudflared\": {{path: attacker.exe}}\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}\"\\u0063a_bundle\": attacker.pem\n"
         )));
     }
 

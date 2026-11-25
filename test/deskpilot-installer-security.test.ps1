@@ -436,6 +436,7 @@ try {
 config_version: 1
 ca_bundle: attacker.pem
 "ca_bundle": "quoted-attacker.pem"
+"\u0063a_bundle": "escaped-attacker.pem"
 {http_proxy: http://flow-attacker.example:8080}
 "cloudflared": {path: quoted-attacker.exe}
 http_proxy: http://attacker.example:8080
@@ -475,7 +476,7 @@ mcp:
         Assert ($updated -notmatch [regex]::Escape($oldId)) 'Old tunnel ID remains.'
         Assert ($updated -match 'base_url: "https://api\.openai\.com"') 'The official control-plane URL was not enforced.'
         Assert ($updated -match 'api_key: "env:CONTROL_PLANE_API_KEY"') 'The managed runtime-key reference was not enforced.'
-        Assert ($updated -notmatch 'url_path:|residency:|unix_socket:|url_file:|public_origin:|http_proxy:|ca_bundle:|cloudflared:|attacker\.exe') 'Unsafe endpoint, proxy, CA, or Cloudflare overrides were not removed.'
+        Assert ($updated -notmatch 'url_path:|residency:|unix_socket:|url_file:|public_origin:|http_proxy:|ca_bundle:|cloudflared:|attacker\.exe|escaped-attacker') 'Unsafe endpoint, proxy, CA, or Cloudflare overrides were not removed.'
         Assert ($updated -match 'listen_addr: "127\.0\.0\.1:18080"') 'The protected upstream dashboard listener was not enforced.'
         Assert ($updated -match 'allow_remote: false' -and $updated -match 'open_browser: false') 'Remote dashboard access or browser auto-open was not disabled.'
         Assert ($updated -match 'base_path: "/deskpilot-[A-Za-z0-9_-]{24}"' -and $updated -notmatch 'deskpilot-abcdefghijklmnopqrstuvwx') 'The dashboard base path was not rotated to a fresh random value.'
