@@ -139,6 +139,9 @@ The authoritative artifact sizes and hashes are recorded in `SHA256SUMS.txt` and
 | Third-party pattern review | 22 generic-pattern hits in upstream `node_modules` only (JSDoc examples, a README sample password, PEM-header string checks, and a public JWT test vector); reviewed as benign, no personal information or usable credential |
 | Native binary path check | `NATIVE_BUILD_PRIVACY_PASS`; no `USERPROFILE`, `D:\DeskPilot`, `CARGO_HOME`, `RUSTUP_HOME`, or `TEMP` path strings |
 | Branding assets | SHA-256 values unchanged; assets neither modified nor regenerated |
+| Isolated end-to-end installation | Passed with the exact published archive and the actual installer into isolated `InstallRoot`, `DataRoot`, `TempRoot`, and `Desktop` paths; required files, default-deny policy, protected profile, runtime manifest and shortcut verified; no app process launched |
+| Transaction rollback | Passed with a single fault injected at the pre-commit validation boundary; application, data, runtime, profile and shortcut all restored, no transaction backup left behind |
+| Doctor Windows preflight | All doctor checks remain fatal except the v0.0.21 `mcp_command_executable` false negative; the exact staged `node.exe` is verified directly instead |
 
 ## Not verified for this Beta
 

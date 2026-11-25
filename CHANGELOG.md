@@ -15,6 +15,8 @@ Corrected manual patch release replacing the withdrawn v1.0.0 Beta. v1.0.0 remai
 - The published v1.0.1 release contains all three artifacts, including the Windows x64 archive that was absent from v1.0.0.
 - Native launcher rebuild with private build paths remapped out of `DeskPilot.exe`; all release assets, including decompressed archives and binaries, were scanned for personal information and credentials.
 - Version metadata is synchronized across package, lockfile, launcher manifest, Rust lockfile, and Win32 version resource, including the NUL terminators in the version strings.
+- The Windows x64 ZIP is now built with forward-slash relative entry names. The previous v1.0.1 archive used `Compress-Archive` and could not be extracted by the installer's safe extractor; installer path protections were left unchanged.
+- `tunnel-client doctor` v0.0.21 tokenizes an absolute Windows MCP path with a shell lexer that strips backslashes, so `mcp_command_executable` always failed on Windows. The installer now verifies the exact staged `node.exe` directly for that one check; every other doctor failure remains fatal.
 
 ### Verification
 

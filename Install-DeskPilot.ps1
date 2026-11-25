@@ -692,7 +692,7 @@ function Get-ProfileTunnelId([string]$Text) {
     return Get-YamlScalarValue $match.Groups[1].Value
 }
 
-function Invoke-TunnelDoctor([string]$TunnelClient, [string]$ProfilePath) {
+function Invoke-TunnelDoctor([string]$TunnelClient, [string]$ProfilePath, [string]$NodePath) {
     # doctor is offline: it parses and preflights the profile but does not start
     # the tunnel or MCP child. A non-secret placeholder lets a fresh standard
     # profile pass credential-shape validation before the user enters a real key.
@@ -702,7 +702,20 @@ function Invoke-TunnelDoctor([string]$TunnelClient, [string]$ProfilePath) {
     try {
         $output = & $TunnelClient doctor --profile-file $ProfilePath --explain 2>&1
         $exitCode = $LASTEXITCODE
-        if ($exitCode -ne 0) { throw "tunnel-client doctor validation failed (exit code $exitCode):`n$($output -join "`n")" }
+        if ($exitCode -ne 0) {
+            $text = (@($output) -join "`n")
+            $failed = [regex]::Match($text, '(?m)^FAILED_CHECKS\s+(.+?)\s*$')
+            # v0.0.21 tokenizes mcp.command with a shell lexer that strips Windows
+            # path separators, so this one check always fails for an absolute
+            # Windows path. Verify the exact staged executable directly instead;
+            # every other doctor failure remains fatal.
+            $onlyExecutable = $failed.Success -and $failed.Groups[1].Value.Trim() -ceq 'mcp_command_executable'
+            $nodeVerified = -not [string]::IsNullOrWhiteSpace($NodePath) -and (Test-Path -LiteralPath $NodePath -PathType Leaf) -and -not ((Get-Item -LiteralPath $NodePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
+            if (-not ($onlyExecutable -and $nodeVerified)) {
+                throw "tunnel-client doctor validation failed (exit code $exitCode):`n$text"
+            }
+            Write-Warning 'tunnel-client doctor cannot resolve Windows absolute paths in mcp.command; the staged node.exe path was verified directly.'
+        }
     } finally {
         if ($hadKey) { $env:CONTROL_PLANE_API_KEY = $oldKey } else { Remove-Item Env:\CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue }
     }
@@ -1102,7 +1115,7 @@ function Invoke-Installer {
             param($Completed)
             # doctor validates the final absolute Node path and never starts the
             # tunnel or MCP child. Dependencies are already in their final paths.
-            Invoke-TunnelDoctor -TunnelClient (Join-Path $tunnelRoot 'tunnel-client.exe') -ProfilePath $profileStage
+            Invoke-TunnelDoctor -TunnelClient (Join-Path $tunnelRoot 'tunnel-client.exe') -ProfilePath $profileStage -NodePath (Join-Path $runtimeRoot 'node.exe')
         }
         $afterCommit = {
             # OneDrive can strip a shortcut property store during sync. Re-apply

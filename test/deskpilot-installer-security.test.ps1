@@ -620,6 +620,24 @@ mcp:
         Assert-Throws { Invoke-TunnelDoctor -TunnelClient $cmd -ProfilePath $profile } 'doctor|validation'
     }
 
+    Test-Case 'doctor Windows path false negative is replaced by a direct staged node check' {
+        $log = Join-Path $temp 'doctor-args.txt'
+        $cmd = Join-Path $temp 'doctor-windows.cmd'
+        Set-Content -LiteralPath $cmd -Value "@echo off`r`necho FAILED_CHECKS mcp_command_executable`r`nexit /b 2`r`n" -Encoding ascii
+        $profile = Join-Path $temp 'doctor-windows-profile.yaml'
+        Set-Content -LiteralPath $profile -Value 'fixture'
+        $node = Join-Path $temp 'doctor-windows-node.exe'
+        Set-Content -LiteralPath $node -Value 'fixture'
+        Invoke-TunnelDoctor -TunnelClient $cmd -ProfilePath $profile -NodePath $node
+        Assert-Throws { Invoke-TunnelDoctor -TunnelClient $cmd -ProfilePath $profile } 'doctor|validation'
+        Assert-Throws { Invoke-TunnelDoctor -TunnelClient $cmd -ProfilePath $profile -NodePath (Join-Path $temp 'missing-node.exe') } 'doctor|validation'
+        Set-Content -LiteralPath $cmd -Value "@echo off`r`necho FAILED_CHECKS mcp_command_executable,control_plane_api_key`r`nexit /b 2`r`n" -Encoding ascii
+        Assert-Throws { Invoke-TunnelDoctor -TunnelClient $cmd -ProfilePath $profile -NodePath $node } 'doctor|validation'
+        $args = (Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue)
+        Assert ($null -eq $args -or $args -notmatch 'run|start') 'Doctor must remain offline.'
+        Assert ($source -match 'profile-file \$ProfilePath --explain') 'Doctor argument contract changed.'
+    }
+
     Test-Case 'downloads are hash checked before callers can extract them' {
         $fixture = Join-Path $temp 'download.fixture'
         $destination = Join-Path $temp 'verified.download'

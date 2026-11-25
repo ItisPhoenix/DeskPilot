@@ -17,6 +17,7 @@ DeskPilot is a Windows-first, source-available host for private desktop control 
 - Upstream MIT attribution and third-party notices preserved in `NOTICE` and `UPSTREAM.md`.
 - **v1.0.1 fixes:** the installer and uninstaller now accept an OneDrive-redirected Desktop without trusting arbitrary links, re-apply and verify the shortcut's AppUserModelID on the final desktop path inside the transaction, and the native launcher is rebuilt with private build paths remapped out of the binary. The archive asset is published alongside the installer and checksums.
 - **Archive packaging correction:** the ZIP now uses forward-slash relative entry names so the installer's safe extractor can read it. This replaces the earlier v1.0.1 archive, which was built with `Compress-Archive` and could not be extracted. Installer path protections were not changed; the fix is in the packaging script only.
+- **Windows doctor workaround:** `tunnel-client` v0.0.21 strips Windows path separators during its `mcp_command_executable` preflight. The installer verifies the exact staged `node.exe` for that one check; all other preflight failures still abort before commit.
 
 ## Asset integrity
 
