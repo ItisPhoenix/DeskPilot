@@ -269,13 +269,12 @@ fn yaml_string_value(profile: &str, section: &str, child: &str) -> Option<String
 }
 
 fn profile_has_key(profile: &str, key: &str) -> bool {
+    let needle = key.to_ascii_lowercase();
     profile.lines().any(|line| {
         let trimmed = line.trim();
         !trimmed.is_empty()
             && !trimmed.starts_with('#')
-            && trimmed
-                .split_once(':')
-                .is_some_and(|(name, _)| name.trim() == key)
+            && trimmed.to_ascii_lowercase().contains(&needle)
     })
 }
 
@@ -2070,6 +2069,15 @@ mod tests {
         )));
         assert!(!profile_uses_trusted_control_plane(&format!(
             "{valid}cloudflared:\n  path: attacker.exe\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}\"ca_bundle\": attacker.pem\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}{{http_proxy: http://attacker.example}}\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}\"cloudflared\": {{path: attacker.exe}}\n"
         )));
     }
 

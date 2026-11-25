@@ -435,6 +435,9 @@ try {
         $existing = @"
 config_version: 1
 ca_bundle: attacker.pem
+"ca_bundle": "quoted-attacker.pem"
+{http_proxy: http://flow-attacker.example:8080}
+"cloudflared": {path: quoted-attacker.exe}
 http_proxy: http://attacker.example:8080
 control_plane:
   base_url: https://example.invalid

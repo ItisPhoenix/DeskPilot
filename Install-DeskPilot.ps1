@@ -420,15 +420,25 @@ function Set-YamlScalar([string]$Line, [string]$JsonValue) {
     return $match.Groups[1].Value + $JsonValue
 }
 
+function Get-YamlKeyName([string]$Line) {
+    $trimmed = $Line.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith('#')) { return '' }
+    $match = [regex]::Match($trimmed, '\A(?:"([^"]+)"|''([^'']+)''|([A-Za-z0-9_.-]+))\s*:')
+    if (-not $match.Success) { return '' }
+    if ($match.Groups[1].Success) { return $match.Groups[1].Value }
+    if ($match.Groups[2].Success) { return $match.Groups[2].Value }
+    return $match.Groups[3].Value
+}
+
 function Find-YamlChildLine([string[]]$Lines, [string]$ParentKey, [string]$ChildKey) {
     $parent = -1
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match ('\A' + [regex]::Escape($ParentKey) + '\s*:\s*(?:#.*)?\z')) { $parent = $i; break }
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ParentKey) { $parent = $i; break }
     }
     if ($parent -lt 0) { throw "The existing profile is missing '$ParentKey'." }
     for ($i = $parent + 1; $i -lt $Lines.Count; $i++) {
         if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { break }
-        if ($Lines[$i] -match ('^\s+' + [regex]::Escape($ChildKey) + '\s*:')) { return $i }
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ChildKey) { return $i }
     }
     throw "The existing profile is missing '$ParentKey.$ChildKey'."
 }
@@ -436,7 +446,7 @@ function Find-YamlChildLine([string[]]$Lines, [string]$ParentKey, [string]$Child
 function Set-YamlChildValue([System.Collections.Generic.List[string]]$Lines, [string]$ParentKey, [string]$ChildKey, [string]$JsonValue) {
     $parent = -1
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match ('\A' + [regex]::Escape($ParentKey) + '\s*:\s*(?:#.*)?\z')) { $parent = $i; break }
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ParentKey) { $parent = $i; break }
     }
     if ($parent -lt 0) {
         $Lines.Add($ParentKey + ':')
@@ -454,7 +464,7 @@ function Set-YamlChildValue([System.Collections.Generic.List[string]]$Lines, [st
         }
     }
     for ($i = $parent + 1; $i -lt $end; $i++) {
-        if ($Lines[$i] -match ('^\s+' + [regex]::Escape($ChildKey) + '\s*:')) {
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ChildKey) {
             $Lines[$i] = Set-YamlScalar $Lines[$i] $JsonValue
             return
         }
@@ -473,7 +483,7 @@ function New-DashboardBasePath {
 function Remove-YamlChildValue([System.Collections.Generic.List[string]]$Lines, [string]$ParentKey, [string]$ChildKey) {
     $parent = -1
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match ('\A' + [regex]::Escape($ParentKey) + '\s*:\s*(?:#.*)?\z')) { $parent = $i; break }
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ParentKey) { $parent = $i; break }
     }
     if ($parent -lt 0) { return }
     $end = $Lines.Count
@@ -481,7 +491,7 @@ function Remove-YamlChildValue([System.Collections.Generic.List[string]]$Lines, 
         if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
     }
     for ($i = $parent + 1; $i -lt $end; $i++) {
-        if ($Lines[$i] -match ('^\s+' + [regex]::Escape($ChildKey) + '\s*:')) {
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $ChildKey) {
             $Lines.RemoveAt($i)
             return
         }
@@ -489,21 +499,32 @@ function Remove-YamlChildValue([System.Collections.Generic.List[string]]$Lines, 
 }
 
 function Remove-YamlSection([System.Collections.Generic.List[string]]$Lines, [string]$SectionKey) {
-    $start = -1
-    for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match ('\A' + [regex]::Escape($SectionKey) + '\s*:\s*(?:#.*)?\z')) { $start = $i; break }
+    while ($true) {
+        $start = -1
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ((Get-YamlKeyName $Lines[$i]) -ceq $SectionKey) { $start = $i; break }
+        }
+        if ($start -lt 0) { return }
+        $end = $Lines.Count
+        for ($i = $start + 1; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
+        }
+        $Lines.RemoveRange($start, $end - $start)
     }
-    if ($start -lt 0) { return }
-    $end = $Lines.Count
-    for ($i = $start + 1; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
-    }
-    $Lines.RemoveRange($start, $end - $start)
 }
 
 function Remove-YamlScalarKey([System.Collections.Generic.List[string]]$Lines, [string]$Key) {
     for ($i = $Lines.Count - 1; $i -ge 0; $i--) {
-        if ($Lines[$i] -match ('^\s*' + [regex]::Escape($Key) + '\s*:')) { $Lines.RemoveAt($i) }
+        if ((Get-YamlKeyName $Lines[$i]) -ceq $Key) { $Lines.RemoveAt($i) }
+    }
+}
+
+function Remove-YamlTokenLines([System.Collections.Generic.List[string]]$Lines, [string]$Token) {
+    for ($i = $Lines.Count - 1; $i -ge 0; $i--) {
+        $line = $Lines[$i]
+        if (-not [string]::IsNullOrWhiteSpace($line) -and -not $line.TrimStart().StartsWith('#') -and $line.ToLowerInvariant().Contains($Token.ToLowerInvariant())) {
+            $Lines.RemoveAt($i)
+        }
     }
 }
 
@@ -548,6 +569,9 @@ mcp:
     Remove-YamlSection $lines 'cloudflared'
     Remove-YamlScalarKey $lines 'ca_bundle'
     Remove-YamlScalarKey $lines 'http_proxy'
+    Remove-YamlTokenLines $lines 'ca_bundle'
+    Remove-YamlTokenLines $lines 'http_proxy'
+    Remove-YamlTokenLines $lines 'cloudflared'
     Remove-YamlChildValue $lines 'control_plane' 'url_path'
     Remove-YamlChildValue $lines 'control_plane' 'residency'
     Remove-YamlChildValue $lines 'health' 'unix_socket'
