@@ -131,6 +131,7 @@ The authoritative artifact sizes and hashes are recorded in `SHA256SUMS.txt` and
 | Check | Result |
 |---|---|
 | Tracked files extracted with `git archive` for the release commit | Passed; installer byte-compared with the committed blob (SHA-256 `2f79ce2f…c2e9c9`) |
+| ZIP entry path normalization | `scripts/package-release.ps1` writes only forward-slash relative names and re-validates the central directory; no backslash, absolute, root, or dot-segment entries |
 | `node scripts/test-release-layout.mjs <stage>` | `RELEASE_LAYOUT_PASS` |
 | Required/forbidden archive entries | Passed; no local config, policy, DPAPI key, tunnel profile, test report, dev dependency, or source/test tree |
 | `SHA256SUMS.txt` independent verification | Passed for both distribution files |

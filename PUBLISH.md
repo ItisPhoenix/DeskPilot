@@ -77,6 +77,8 @@ Uninstall-DeskPilot.ps1
 
 `server/node_modules` must contain production dependencies only. The archive must not contain credentials, tunnel profiles, local state, test reports, development dependencies, or an OpenAI admin key.
 
+Every ZIP entry name must use forward slashes and a path relative to the archive root, with no leading `./`, no drive/root prefix, and no `.` or `..` segments. The installer's `Expand-SafeZip` rejects backslashes by design; do not weaken that check to accept a badly packaged archive. `scripts/package-release.ps1` builds the ZIP with `System.IO.Compression.ZipArchive` and validates every central-directory entry name before publication; do not use `Compress-Archive` for the release ZIP on Windows.
+
 Create `DeskPilot-v1.0.1-windows-x64.zip`, copy the installer to `Install-DeskPilot-v1.0.1.ps1`, and generate `SHA256SUMS.txt` from those exact two files. Recompute both digests after any repackaging or installer edit. Do not reuse an earlier checksum.
 
 Tracked release files must come from `git archive` for the release commit. Byte-compare the packaged installer with the committed installer extracted from that archive, not a CRLF-normalized working-tree copy.
