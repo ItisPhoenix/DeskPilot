@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Security fixes target the latest DeskPilot release and the current default branch. DeskPilot v1.0.0 Beta is a public, source-first Windows pre-release.
+Security fixes target the latest DeskPilot release and the current default branch. DeskPilot v1.0.1 Beta is a public, source-first Windows pre-release.
 
 ## Report a vulnerability
 
@@ -95,11 +95,11 @@ See [PRIVACY.md](PRIVACY.md) for local paths, network behavior, retention, and d
 
 ## Supply chain and unsigned binaries
 
-The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the full official `tunnel-client-v0.0.21-windows-amd64.zip` against its publisher checksum, and verifies pinned Node.js **v24.22.3** against its official checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js.
+The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.1-windows-x64.zip` and `Install-DeskPilot-v1.0.1.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the full official `tunnel-client-v0.0.21-windows-amd64.zip` against its publisher checksum, and verifies pinned Node.js **v24.22.3** against its official checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js.
 
 When WebView2 is missing, the installer downloads the bootstrapper from Microsoft's official fwlink, requires a valid Microsoft Corporation Authenticode signature, checks hash stability before execution, installs silently, and verifies the Runtime in the registry. Failure aborts before the DeskPilot application swap.
 
-DeskPilot v1.0.0 Beta executables are **not signed with Authenticode**. The manual release is checksummed but **unattested** because it was published without GitHub Actions. Checksums can detect changes only when the expected digest comes from a trusted channel; they do not identify a signed publisher, provide independent build provenance, or remove SmartScreen warnings. A compromised repository or release account can still substitute both artifacts and checksums. Follow [PUBLISH.md](PUBLISH.md); do not disable operating-system security warnings to bypass verification.
+DeskPilot v1.0.1 Beta executables are **not signed with Authenticode**. The manual release is checksummed but **unattested** because it was published without GitHub Actions. Checksums can detect changes only when the expected digest comes from a trusted channel; they do not identify a signed publisher, provide independent build provenance, or remove SmartScreen warnings. A compromised repository or release account can still substitute both artifacts and checksums. Follow [PUBLISH.md](PUBLISH.md); do not disable operating-system security warnings to bypass verification.
 
 ## Known limitations
 

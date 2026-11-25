@@ -12,8 +12,8 @@ fn main() {
     let rc = format!(
         r#"101 ICON "{}"
 1 VERSIONINFO
- FILEVERSION 1,0,0,0
- PRODUCTVERSION 1,0,0,0
+ FILEVERSION 1,0,1,0
+ PRODUCTVERSION 1,0,1,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0
  FILEOS 0x40004L
@@ -26,11 +26,11 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "DeskPilot\0"
    VALUE "FileDescription", "DeskPilot - Private Desktop Control\0"
-   VALUE "FileVersion", "1.0.0.0\0"
+   VALUE "FileVersion", "1.0.1.0\0"
    VALUE "InternalName", "DeskPilot\0"
    VALUE "OriginalFilename", "DeskPilot.exe\0"
    VALUE "ProductName", "DeskPilot\0"
-   VALUE "ProductVersion", "1.0.0\0"
+   VALUE "ProductVersion", "1.0.1\0"
   END
  END
  BLOCK "VarFileInfo"

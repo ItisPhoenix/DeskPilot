@@ -1,6 +1,6 @@
 {
   "name": "deskpilot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Windows-first private desktop control host for ChatGPT using the OpenAI tunnel client.",
   "license": "MIT",
   "author": "DeskPilot contributors",

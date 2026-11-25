@@ -54,8 +54,8 @@ const csv = `${version.split(".").join(",")},0`;
 const replacements = [
   [/FILEVERSION\s+\d+,\d+,\d+,\d+/, `FILEVERSION ${csv}`],
   [/PRODUCTVERSION\s+\d+,\d+,\d+,\d+/, `PRODUCTVERSION ${csv}`],
-  [/"FileVersion",\s*"[^"]+"/, `"FileVersion", "${version}.0"`],
-  [/"ProductVersion",\s*"[^"]+"/, `"ProductVersion", "${version}"`],
+  [/"FileVersion",\s*"[^"]*?(\\0)?"/, `"FileVersion", "${version}.0$1"`],
+  [/"ProductVersion",\s*"[^"]*?(\\0)?"/, `"ProductVersion", "${version}$1"`],
 ];
 for (const [pattern, replacement] of replacements) {
   if (!pattern.test(build)) throw new Error(`Cannot find version resource ${pattern} in ${buildPath}`);

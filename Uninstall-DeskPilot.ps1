@@ -21,9 +21,22 @@ function Get-CanonicalPath([string]$Path) {
     return $full.TrimEnd('\')
 }
 
-function Assert-NoReparsePoint([string]$Path) {
+function Get-DeskPilotDesktop {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'The Desktop known folder is unavailable.' }
+    return Get-CanonicalPath $desktop
+}
+
+function Assert-NoReparsePoint([string]$Path, [string]$TrustedBase) {
     $current = Get-CanonicalPath $Path
+    $trusted = $null
+    if (-not [string]::IsNullOrWhiteSpace($TrustedBase)) { $trusted = Get-CanonicalPath $TrustedBase }
     while ($true) {
+        # OneDrive Known Folder Move marks the Desktop folder and its sync root
+        # as reparse points. Stop at the resolved known folder so those trusted
+        # ancestors are accepted, while the shortcut itself and anything between
+        # it and Desktop remain subject to the full reparse-point check.
+        if ($null -ne $trusted -and $current -ieq $trusted) { break }
         $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
         if ($null -ne $item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
             throw "Reparse points and links are not allowed: $current"
@@ -88,16 +101,18 @@ function Assert-UninstallRoots([string]$LocalAppData, [string]$InstallRoot, [str
     if ($install -ieq $data) { throw 'Install and data roots must be distinct.' }
     if ($install -ine $expectedInstall) { throw "Unexpected install root. Expected '$expectedInstall'." }
     if ($data -ine $expectedData) { throw "Unexpected data root. Expected '$expectedData'." }
+    $desktop = Get-DeskPilotDesktop
     $shortcutParent = Split-Path -Parent $shortcut
-    if ((Split-Path -Leaf $shortcut) -ine 'DeskPilot.lnk' -or (Split-Path -Leaf $shortcutParent) -ine 'Desktop') { throw 'Unexpected shortcut path; expected Desktop\DeskPilot.lnk.' }
+    if ((Split-Path -Leaf $shortcut) -ine 'DeskPilot.lnk' -or $shortcutParent -ine $desktop) { throw 'Unexpected shortcut path; expected Desktop\DeskPilot.lnk.' }
     Assert-NoReparsePoint $install
     Assert-NoReparsePoint $data
-    Assert-NoReparsePoint $shortcut
+    Assert-NoReparsePoint $shortcut -TrustedBase $desktop
     return [pscustomobject]@{
         LocalAppData = $local
         InstallRoot = $install
         DataRoot = $data
         ShortcutPath = $shortcut
+        Desktop = $desktop
     }
 }
 
@@ -209,7 +224,7 @@ function Invoke-Uninstaller {
     $recursiveTargets += $backups
     if ($RemoveUserData -and (Test-Path -LiteralPath $data)) { $recursiveTargets += $data }
     foreach ($target in $recursiveTargets) { Assert-NoReparseTree $target }
-    if (Test-Path -LiteralPath $shortcut) { Assert-NoReparsePoint $shortcut }
+    if (Test-Path -LiteralPath $shortcut) { Assert-NoReparsePoint $shortcut -TrustedBase $paths.Desktop }
 
     if ($recursiveTargets.Count -gt 0) {
         Write-Host 'The following DeskPilot folders will be recursively deleted:' -ForegroundColor Yellow

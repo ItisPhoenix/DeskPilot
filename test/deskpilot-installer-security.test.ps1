@@ -145,8 +145,8 @@ try {
         $desk = $artifacts | Where-Object Key -eq 'DeskPilot' | Select-Object -First 1
         $tunnel = $artifacts | Where-Object Key -eq 'TunnelClient' | Select-Object -First 1
         $node = $artifacts | Where-Object Key -eq 'Node' | Select-Object -First 1
-        Assert ($desk.Version -eq 'v1.0.0' -and $desk.Name -eq 'DeskPilot-v1.0.0-windows-x64.zip') 'DeskPilot must use the v1.0.0 Windows x64 archive.'
-        Assert ($desk.Url -eq 'https://github.com/ItisPhoenix/DeskPilot/releases/download/v1.0.0/DeskPilot-v1.0.0-windows-x64.zip') 'DeskPilot download URL must be pinned.'
+        Assert ($desk.Version -eq 'v1.0.1' -and $desk.Name -eq 'DeskPilot-v1.0.1-windows-x64.zip') 'DeskPilot must use the v1.0.1 Windows x64 archive.'
+        Assert ($desk.Url -eq 'https://github.com/ItisPhoenix/DeskPilot/releases/download/v1.0.1/DeskPilot-v1.0.1-windows-x64.zip') 'DeskPilot download URL must be pinned.'
         Assert ($tunnel.Version -eq 'v0.0.21' -and $tunnel.Name -eq 'tunnel-client-v0.0.21-windows-amd64.zip') 'tunnel-client must use the full v0.0.21 Windows AMD64 archive, not a runtime-only flavor.'
         Assert ($tunnel.Sha256 -eq '2faf80ae62b58485fcef534cd3f78cd8b82e71cb04d14c2a5c73dbb4eb6c575a') 'tunnel-client checksum pin is wrong.'
         Assert ($node.Version -eq 'v24.22.3' -and $node.Name -eq 'node-v24.22.3-win-x64.zip') 'Node must use the selected Node 24 LTS Windows x64 archive.'
@@ -389,6 +389,21 @@ try {
         Assert ((Get-Content -LiteralPath (Join-Path $out 'folder/file.txt') -Raw) -eq 'safe') 'Safe ZIP content was not extracted.'
     }
 
+    Test-Case 'ZIP standard root prefix is normalized without allowing aliases or traversal' {
+        $zip = Join-Path $temp 'root-prefix.zip'; $out = Join-Path $temp 'root-prefix-out'
+        New-ZipFixture $zip @(@{ Name='./' },@{ Name='./folder/' },@{ Name='./folder/file.txt'; Content='fixture' })
+        Expand-SafeZip -ArchivePath $zip -DestinationPath $out
+        Assert (Test-Path -LiteralPath (Join-Path $out 'folder/file.txt')) 'Standard root prefix rejected.'
+        $zip = Join-Path $temp 'root-alias.zip'; $out = Join-Path $temp 'root-alias-out'
+        New-ZipFixture $zip @(@{ Name='a.txt'; Content='one' },@{ Name='./a.txt'; Content='two' })
+        Assert-Throws { Expand-SafeZip -ArchivePath $zip -DestinationPath $out } 'duplicate'
+        $zip = Join-Path $temp 'root-traversal.zip'; $out = Join-Path $temp 'root-traversal-out'
+        New-ZipFixture $zip @(@{ Name='./../bad.txt'; Content='fixture' })
+        Assert-Throws { Expand-SafeZip -ArchivePath $zip -DestinationPath $out } 'unsafe|traversal'
+        $zip = Join-Path $temp 'nested-collision.zip'; $out = Join-Path $temp 'nested-collision-out'
+        New-ZipFixture $zip @(@{ Name='folder/file'; Content='one' },@{ Name='folder/file/child'; Content='two' })
+        Assert-Throws { Expand-SafeZip -ArchivePath $zip -DestinationPath $out } 'collision'
+    }
     Test-Case 'ZIP traversal and absolute paths are rejected before extraction' {
         foreach ($name in @('../escape.txt', 'folder/../../escape.txt', '/absolute.txt', '\absolute.txt', 'C:\escape.txt', 'C:escape.txt', '\\server\share\escape.txt', 'folder/file.txt:stream')) {
             $zip = Join-Path $temp ('unsafe-' + [Guid]::NewGuid().ToString('N') + '.zip')
@@ -641,6 +656,77 @@ mcp:
             Assert-Throws { Assert-ManagedPath -Path $junction -Leaf 'linked-data' } 'reparse|link'
         } catch [Management.Automation.ItemNotFoundException] {
             Write-Host 'SKIP junction fixture unavailable'
+        }
+    }
+
+    Test-Case 'published pinned DeskPilot Beta is accepted but drafts and dependency prereleases are rejected' {
+        function Invoke-RestMethod { param($Uri,$Headers,$ErrorAction) return @{tag_name=$script:fixtureTag;draft=$script:fixtureDraft;prerelease=$script:fixturePre} }
+        $script:fixtureTag='v1.0.0'; $script:fixtureDraft=$false; $script:fixturePre=$true
+        Assert ((Get-GitHubRelease 'ItisPhoenix/DeskPilot' 'v1.0.0').prerelease) 'Published DeskPilot Beta rejected.'
+        Assert-Throws { Get-GitHubRelease 'openai/tunnel-client' 'v1.0.0' } 'required published release'
+        $script:fixtureDraft=$true
+        Assert-Throws { Get-GitHubRelease 'ItisPhoenix/DeskPilot' 'v1.0.0' } 'required published release'
+        $script:fixtureDraft=$false; $script:fixtureTag='v9.9.9'
+        Assert-Throws { Get-GitHubRelease 'ItisPhoenix/DeskPilot' 'v1.0.0' } 'required published release'
+    }
+    Test-Case 'real installer directory guards and literal tunnel copy work' {
+        $guardRoot = New-FixtureRoot 'deskpilot-guard-'
+        try {
+            $guards = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text -match '^if \(.*Test-Path -LiteralPath \$(data|install).*is not a directory' }, $true))
+            Assert ($guards.Count -eq 2) 'Expected both actual installer directory guards.'
+            foreach ($guard in $guards) {
+                $data = Join-Path $guardRoot 'missing'
+                $install = $data
+                . ([scriptblock]::Create($guard.Extent.Text))
+                New-Item -ItemType Directory -Path $data | Out-Null
+                . ([scriptblock]::Create($guard.Extent.Text))
+                Remove-Item -LiteralPath $data
+                Set-Content -LiteralPath $data -Value 'not directory'
+                Assert-Throws { . ([scriptblock]::Create($guard.Extent.Text)) } 'root is not a directory'
+                Remove-Item -LiteralPath $data
+            }
+            $sourceDir = Join-Path $guardRoot 'source[fixture]'
+            $tunnelStage = Join-Path $guardRoot 'dest'
+            New-Item -ItemType Directory -Path $sourceDir,$tunnelStage | Out-Null
+            Set-Content -LiteralPath (Join-Path $sourceDir 'tunnel-client.exe') -Value 'dummy'
+            Set-Content -LiteralPath (Join-Path $sourceDir 'support.txt') -Value 'dummy'
+            $tunnelExecutables = @(Get-Item -LiteralPath (Join-Path $sourceDir 'tunnel-client.exe'))
+            $copy = @($ast.FindAll({param($n) $n -is [Management.Automation.Language.ForEachStatementAst] -and $n.Extent.Text -match 'Get-ChildItem -LiteralPath \$tunnelExecutables\[0\].Directory.FullName' },$true))
+            Assert ($copy.Count -eq 1) 'Expected real tunnel copy loop.'
+            . ([scriptblock]::Create($copy[0].Extent.Text))
+            Assert (Test-Path -LiteralPath (Join-Path $tunnelStage 'tunnel-client.exe')) 'Tunnel client not copied.'
+            Assert (Test-Path -LiteralPath (Join-Path $tunnelStage 'support.txt')) 'Tunnel support file not copied.'
+        } finally { Remove-Item -LiteralPath $guardRoot -Recurse -Force }
+    }
+    Test-Case 'OneDrive desktop shortcut stays scoped to the trusted known folder' {
+        Assert ($source -match 'function Get-DeskPilotDesktop') 'Desktop known-folder resolver is missing.'
+        Assert ($source -match 'TrustedBase') 'Shortcut reparse validation has no trusted known-folder base.'
+        Assert ($source -match 'Set-ShortcutAppUserModelId -ShortcutPath \$shortcut') 'AUMID is not re-applied on the final desktop shortcut.'
+        $root = New-FixtureRoot 'deskpilot-onedrive-installer-'
+        $oneDrive = Join-Path $root 'OneDrive'
+        $linkedChild = Join-Path $root 'oneDrive/Desktop/linked'
+        try {
+            $syncRoot = Join-Path $root 'sync-target'
+            $desktop = Join-Path $oneDrive 'Desktop'
+            $shortcut = Join-Path $desktop 'DeskPilot.lnk'
+            New-Item -ItemType Directory -Path $syncRoot -Force | Out-Null
+            try { New-Item -ItemType Junction -Path $oneDrive -Target $syncRoot -ErrorAction Stop | Out-Null }
+            catch [Management.Automation.ItemNotFoundException] { Write-Host 'SKIP OneDrive junction fixture unavailable'; return }
+            New-Item -ItemType Directory -Path $desktop -Force | Out-Null
+            Set-Content -LiteralPath $shortcut -Value 'fixture'
+            Assert-NoReparsePoint -Path $shortcut -TrustedBase $desktop
+            Assert-Throws { Assert-NoReparsePoint -Path $shortcut } 'reparse|link'
+            try {
+                New-Item -ItemType Junction -Path $linkedChild -Target $syncRoot -ErrorAction Stop | Out-Null
+                $nested = Join-Path $linkedChild 'DeskPilot.lnk'
+                Set-Content -LiteralPath $nested -Value 'fixture'
+                Assert-Throws { Assert-NoReparsePoint -Path $nested -TrustedBase $desktop } 'reparse|link'
+            } catch [Management.Automation.ItemNotFoundException] { Write-Host 'SKIP nested junction fixture unavailable' }
+        } finally {
+            foreach ($junction in @($linkedChild, $oneDrive)) {
+                if (Test-Path -LiteralPath $junction) { [IO.Directory]::Delete($junction, $false) }
+            }
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 

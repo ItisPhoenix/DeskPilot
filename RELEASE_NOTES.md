@@ -1,4 +1,6 @@
-# DeskPilot v1.0.0 Beta
+# DeskPilot v1.0.1 Beta
+
+> **v1.0.0 is withdrawn.** It had confirmed setup and build-metadata privacy defects and was missing its archive asset. The v1.0.0 release notice and tag are retained with a withdrawal warning. v1.0.1 is the corrected manual patch release.
 
 DeskPilot is a Windows-first, source-available host for private desktop control through an OpenAI Secure MCP Tunnel. This Beta focuses on guided installation, default-deny permissions, local credential protection, a protected local dashboard, and a reviewable source tree.
 
@@ -13,10 +15,18 @@ DeskPilot is a Windows-first, source-available host for private desktop control 
 - A loopback-only dashboard proxy with an exact `Host` allowlist, a 144-bit random base path, supervised upstream-ownership checks, and cross-site unsafe-action rejection, mitigating DNS-rebinding reads and direct-port bypass against tunnel-client v0.0.21.
 - Local dashboard restricted to loopback; server-side URL fetching and unsolicited browser downloads are disabled.
 - Upstream MIT attribution and third-party notices preserved in `NOTICE` and `UPSTREAM.md`.
+- **v1.0.1 fixes:** the installer and uninstaller now accept an OneDrive-redirected Desktop without trusting arbitrary links, re-apply and verify the shortcut's AppUserModelID on the final desktop path inside the transaction, and the native launcher is rebuilt with private build paths remapped out of the binary. The archive asset is published alongside the installer and checksums.
+
+## Upgrading from v1.0.0
+
+1. Download `Install-DeskPilot-v1.0.1.ps1` and `SHA256SUMS.txt` from this release and verify both hashes.
+2. If the withdrawn v1.0.0 build was installed, uninstall it first with `Uninstall-DeskPilot.ps1` (add `-RemoveUserData` only if you want to discard the local policy, tunnel profile, and DPAPI key).
+3. Run the v1.0.1 installer. It repairs the installation in place, preserves the existing permission mask, and rotates the dashboard base path.
+4. No ChatGPT-side change is required if the existing tunnel ID is reused: keep the same custom MCP connection and plugin. If you recreate the connection, keep the same restricted runtime key with Tunnels Read + Use.
 
 ## Installation
 
-Download `Install-DeskPilot-v1.0.0.ps1` and `SHA256SUMS.txt` from this release, review them, and verify both distribution files before running the installer in Windows PowerShell. The installer obtains Node.js, the official OpenAI tunnel client, and Microsoft WebView2 Evergreen from verified official sources.
+Download `Install-DeskPilot-v1.0.1.ps1` and `SHA256SUMS.txt` from this release, review them, and verify both distribution files before running the installer in Windows PowerShell. The installer obtains Node.js, the official OpenAI tunnel client, and Microsoft WebView2 Evergreen from verified official sources.
 
 Full instructions, account eligibility, costs, limits, troubleshooting, and uninstall steps are in `README.md`.
 

@@ -1,6 +1,6 @@
 # Privacy
 
-DeskPilot keeps its configuration, credential file, launcher activity, and any explicitly enabled diagnostic logs on the Windows device. Managed tool history is metadata-only in memory by default. It uses the official OpenAI tunnel client to connect a local MCP server to ChatGPT. This document describes the managed DeskPilot v1.0.0 runtime, not every feature retained from upstream source.
+DeskPilot keeps its configuration, credential file, launcher activity, and any explicitly enabled diagnostic logs on the Windows device. Managed tool history is metadata-only in memory by default. It uses the official OpenAI tunnel client to connect a local MCP server to ChatGPT. This document describes the managed DeskPilot v1.0.1 runtime, not every feature retained from upstream source.
 
 ## Data stored locally
 
@@ -40,7 +40,7 @@ Secure MCP Tunnel transport traffic is distinct from normal app-level product lo
 
 The installer may contact:
 
-- GitHub for `DeskPilot-v1.0.0-windows-x64.zip`, release metadata, and `SHA256SUMS.txt`.
+- GitHub for `DeskPilot-v1.0.1-windows-x64.zip`, release metadata, and `SHA256SUMS.txt`.
 - GitHub for the official `openai/tunnel-client` v0.0.21 full Windows amd64 archive and its checksums.
 - `nodejs.org` for the pinned Node.js **v24.22.3** Windows x64 archive.
 - Microsoft's official WebView2 fwlink for the bootstrapper when the Runtime is missing.
@@ -48,7 +48,7 @@ The installer may contact:
 
 For WebView2, the installer verifies a valid Microsoft Corporation Authenticode signature, checks that the hash is unchanged before execution, installs silently, and verifies the Runtime in the registry. A setup failure aborts before the DeskPilot application swap.
 
-The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the tunnel-client archive against its publisher checksum, and verifies the pinned Node.js checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js. DeskPilot and tunnel-client remain unsigned, so their checksums do not establish a code-signing publisher identity. These checks do not establish an OpenAI or Microsoft account entitlement.
+The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.1-windows-x64.zip` and `Install-DeskPilot-v1.0.1.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the tunnel-client archive against its publisher checksum, and verifies the pinned Node.js checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js. DeskPilot and tunnel-client remain unsigned, so their checksums do not establish a code-signing publisher identity. These checks do not establish an OpenAI or Microsoft account entitlement.
 
 ### Other network-capable features
 

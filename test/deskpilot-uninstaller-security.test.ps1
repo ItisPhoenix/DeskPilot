@@ -46,12 +46,18 @@ function New-FixtureRoot([string]$Prefix) {
 }
 
 $temp = New-FixtureRoot 'deskpilot-uninstaller-test-'
+$script:fixtureDesktop = $null
+function Get-DeskPilotDesktop {
+    if ([string]::IsNullOrWhiteSpace($script:fixtureDesktop)) { throw 'Fixture desktop was not configured.' }
+    return Get-CanonicalPath $script:fixtureDesktop
+}
 try {
     Test-Case 'uninstall roots are canonical explicit DeskPilot leaves' {
         $local = Join-Path $temp 'LocalAppData'
         $install = Join-Path $local 'Programs/DeskPilot'
         $data = Join-Path $local 'DeskPilot'
         $desktop = Join-Path $local 'Desktop'
+        $script:fixtureDesktop = $desktop
         $shortcut = Join-Path $desktop 'DeskPilot.lnk'
         New-Item -ItemType Directory -Path $local, $install, $data, $desktop -Force | Out-Null
         $paths = Assert-UninstallRoots -LocalAppData $local -InstallRoot $install -DataRoot $data -ShortcutPath $shortcut
@@ -71,6 +77,7 @@ try {
         $install = Join-Path $local 'Programs/DeskPilot'
         $data = Join-Path $local 'DeskPilot'
         $desktop = Join-Path $local 'Desktop'
+        $script:fixtureDesktop = $desktop
         $shortcut = Join-Path $desktop 'DeskPilot.lnk'
         New-Item -ItemType Directory -Path $local, $install, $data, $desktop -Force | Out-Null
         Assert-Throws { Assert-UninstallRoots -LocalAppData '' -InstallRoot $install -DataRoot $data -ShortcutPath $shortcut } 'LOCALAPPDATA'
@@ -93,6 +100,7 @@ try {
         $data = Join-Path $local 'DeskPilot'
         $install = Join-Path $local 'Programs/DeskPilot'
         $desktop = Join-Path $local 'Desktop'
+        $script:fixtureDesktop = $desktop
         $shortcut = Join-Path $desktop 'DeskPilot.lnk'
         $outside = Join-Path $temp 'outside'
         New-Item -ItemType Directory -Path $local, $data, $install, $desktop, $outside -Force | Out-Null
@@ -106,6 +114,38 @@ try {
             Assert-Throws { Assert-UninstallRoots -LocalAppData $local -InstallRoot $linkedInstall -DataRoot $data -ShortcutPath $shortcut } 'reparse|link|unexpected'
         } catch [Management.Automation.ItemNotFoundException] {
             Write-Host 'SKIP junction fixture unavailable'
+        }
+    }
+
+    Test-Case 'OneDrive-redirected Desktop is accepted while links below it are rejected' {
+        $local = Join-Path $temp 'OneDriveLocal'
+        $install = Join-Path $local 'Programs/DeskPilot'
+        $data = Join-Path $local 'DeskPilot'
+        $syncRoot = Join-Path $temp 'onedrive-target'
+        $redirectedDesktop = Join-Path $local 'OneDrive/Desktop'
+        $shortcut = Join-Path $redirectedDesktop 'DeskPilot.lnk'
+        New-Item -ItemType Directory -Path $local, $install, $data, $syncRoot -Force | Out-Null
+        try {
+            New-Item -ItemType Junction -Path (Join-Path $local 'OneDrive') -Target $syncRoot -ErrorAction Stop | Out-Null
+        } catch [Management.Automation.ItemNotFoundException] {
+            Write-Host 'SKIP OneDrive junction fixture unavailable'
+            return
+        }
+        New-Item -ItemType Directory -Path $redirectedDesktop -Force | Out-Null
+        Set-Content -LiteralPath $shortcut -Value 'fixture'
+        $script:fixtureDesktop = $redirectedDesktop
+        $paths = Assert-UninstallRoots -LocalAppData $local -InstallRoot $install -DataRoot $data -ShortcutPath $shortcut
+        Assert ($paths.ShortcutPath -eq [IO.Path]::GetFullPath($shortcut)) 'OneDrive Desktop shortcut was rejected.'
+        Assert ($paths.Desktop -eq [IO.Path]::GetFullPath($redirectedDesktop)) 'OneDrive Desktop was not resolved.'
+        $linkedChild = Join-Path $redirectedDesktop 'linked'
+        try {
+            New-Item -ItemType Junction -Path $linkedChild -Target $syncRoot -ErrorAction Stop | Out-Null
+            $nestedShortcut = Join-Path $linkedChild 'DeskPilot.lnk'
+            Set-Content -LiteralPath $nestedShortcut -Value 'fixture'
+            Assert-Throws { Assert-UninstallRoots -LocalAppData $local -InstallRoot $install -DataRoot $data -ShortcutPath $nestedShortcut } 'unexpected|Desktop'
+            Assert-Throws { Assert-NoReparsePoint -Path $nestedShortcut -TrustedBase $redirectedDesktop } 'reparse|link'
+        } catch [Management.Automation.ItemNotFoundException] {
+            Write-Host 'SKIP nested junction fixture unavailable'
         }
     }
 

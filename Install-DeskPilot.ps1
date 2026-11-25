@@ -34,9 +34,22 @@ function Get-CanonicalPath([string]$Path) {
     return $full.TrimEnd('\')
 }
 
-function Assert-NoReparsePoint([string]$Path) {
+function Get-DeskPilotDesktop {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    if ([string]::IsNullOrWhiteSpace($desktop)) { throw 'The Desktop known folder is unavailable.' }
+    return Get-CanonicalPath $desktop
+}
+
+function Assert-NoReparsePoint([string]$Path, [string]$TrustedBase) {
     $current = Get-CanonicalPath $Path
+    $trusted = $null
+    if (-not [string]::IsNullOrWhiteSpace($TrustedBase)) { $trusted = Get-CanonicalPath $TrustedBase }
     while ($true) {
+        # OneDrive Known Folder Move marks the Desktop folder and its sync root
+        # as reparse points. Stop at the resolved known folder so those trusted
+        # ancestors are accepted, while the shortcut itself and anything between
+        # it and Desktop remain subject to the full reparse-point check.
+        if ($null -ne $trusted -and $current -ieq $trusted) { break }
         $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
         if ($null -ne $item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
             throw "Reparse points and links are not allowed: $current"
@@ -141,9 +154,9 @@ function Get-PinnedArtifacts {
     # https://nodejs.org/dist/v24.22.3/SHASUMS256.txt, not discovered at install time.
     return @(
         [pscustomobject]@{
-            Key = 'DeskPilot'; Repository = 'ItisPhoenix/DeskPilot'; Version = 'v1.0.0'
-            Name = 'DeskPilot-v1.0.0-windows-x64.zip'
-            Url = 'https://github.com/ItisPhoenix/DeskPilot/releases/download/v1.0.0/DeskPilot-v1.0.0-windows-x64.zip'
+            Key = 'DeskPilot'; Repository = 'ItisPhoenix/DeskPilot'; Version = 'v1.0.1'
+            Name = 'DeskPilot-v1.0.1-windows-x64.zip'
+            Url = 'https://github.com/ItisPhoenix/DeskPilot/releases/download/v1.0.1/DeskPilot-v1.0.1-windows-x64.zip'
             Sha256 = $null
         },
         [pscustomobject]@{
@@ -167,8 +180,8 @@ function Get-GitHubRelease([string]$Repository, [string]$Tag) {
     }
     $headers = @{ 'User-Agent' = 'DeskPilot-Installer'; 'Accept' = 'application/vnd.github+json' }
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/tags/$Tag" -Headers $headers -ErrorAction Stop
-    if ($release.tag_name -cne $Tag -or $release.draft -or $release.prerelease) {
-        throw "GitHub did not return the required stable release $Tag."
+    if ($release.tag_name -cne $Tag -or $release.draft -or ($release.prerelease -and $Repository -cne 'ItisPhoenix/DeskPilot')) {
+        throw "GitHub did not return the required published release $Tag."
     }
     return $release
 }
@@ -327,7 +340,7 @@ function Expand-SafeZip(
     try {
         $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Read, $false)
         try {
-            $plans = @()
+            $plans = New-Object 'System.Collections.Generic.List[object]'
             $planMap = @{}
             $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
             $totalExpanded = [long]0
@@ -339,6 +352,14 @@ function Expand-SafeZip(
                     throw "Unsafe ZIP entry path: $name"
                 }
                 $isDirectory = $name.EndsWith('/')
+                # ZIPs from standard tools may have one explicit ./ root and ./-prefixed entries.
+                # Normalize only one leading prefix, and still reject dot segments and aliases.
+                if ($name -ceq './') {
+                    $rootType = (($entry.ExternalAttributes -shr 16) -band 0xF000)
+                    if ($entry.Length -ne 0 -or $rootType -notin @(0,0x4000) -or ($entry.ExternalAttributes -band 0x400) -ne 0 -or (Test-ZipEntryHasReparseTag $entry) -or -not $names.Add('.')) { throw 'Unsafe or duplicate ZIP root entry.' }
+                    continue
+                }
+                if ($name.StartsWith('./',[StringComparison]::Ordinal)) { $name = $name.Substring(2) }
                 $relative = $name.TrimEnd('/')
                 $segments = @($relative -split '/')
                 if ($segments.Count -eq 0 -or ($segments | Where-Object { [string]::IsNullOrEmpty($_) -or $_ -ceq '.' -or $_ -ceq '..' })) {
@@ -367,7 +388,7 @@ function Expand-SafeZip(
                 $totalCompressed += [long]$entry.CompressedLength
                 if ($totalExpanded -gt $MaxExpandedBytes) { throw 'ZIP expanded size exceeds the allowed expansion limit.' }
                 $plan = [pscustomobject]@{ Entry = $entry; Relative = $relative; Target = $target; IsDirectory = ($isDirectory -or $unixType -eq 0x4000) }
-                $plans += $plan
+                $plans.Add($plan)
                 $planMap[$relative] = $plan
             }
             # Check parent types after all entries are known so a file that
@@ -375,7 +396,7 @@ function Expand-SafeZip(
             foreach ($plan in $plans) {
                 $parentPath = [IO.Path]::GetDirectoryName($plan.Target)
                 while ($parentPath -and $parentPath -ne $destination) {
-                    $parentRelative = $parentPath.Substring($destination.Length).TrimStart('\')
+                    $parentRelative = $parentPath.Substring($destination.Length).TrimStart('\').Replace('\','/')
                     $parentPlan = $planMap[$parentRelative]
                     if ($null -ne $parentPlan -and -not $parentPlan.IsDirectory) { throw "ZIP file/directory path collision: $($plan.Relative)" }
                     $parentPath = [IO.Path]::GetDirectoryName($parentPath)
@@ -698,7 +719,7 @@ function Invoke-PathTransaction($Operations, [scriptblock]$Validation, [int]$Val
         if (-not (Test-Path -LiteralPath $operation.Staged)) { throw "Transaction staging path is missing: $($operation.Staged)" }
         if (Test-Path -LiteralPath $operation.Backup) { throw "Transaction backup path already exists: $($operation.Backup)" }
         if (-not $targets.Add($operation.Target)) { throw "Duplicate transaction target: $($operation.Target)" }
-        Assert-NoReparsePoint $operation.Target
+        Assert-NoReparsePoint $operation.Target -TrustedBase $operation.TrustedBase
         Assert-NoReparseTree $operation.Staged
         New-Item -ItemType Directory -Path (Split-Path $operation.Target -Parent) -Force | Out-Null
         New-Item -ItemType Directory -Path (Split-Path $operation.Backup -Parent) -Force | Out-Null
@@ -756,12 +777,67 @@ function New-DeskPilotShortcut([string]$ShortcutPath, [string]$InstallRoot) {
     $shortcut.IconLocation = Join-Path $InstallRoot 'DeskPilot.exe'
     $shortcut.Description = 'DeskPilot Private Desktop Control'
     $shortcut.Save()
-    $explorer = New-Object -ComObject Shell.Application
-    $folder = $explorer.Namespace((Split-Path $shortcutPath -Parent))
-    $item = $folder.ParseName((Split-Path $shortcutPath -Leaf))
-    if ($null -eq $item) { throw 'Could not reopen the staged DeskPilot shortcut.' }
-    # Match launcher/src/core.inc.rs APPID so taskbar identity is stable.
-    $item.ExtendedProperty('System.AppUserModel.ID') = 'DeskPilot.PrivateDesktopControl.1'
+    Set-ShortcutAppUserModelId -ShortcutPath $shortcutPath
+}
+
+function Set-ShortcutAppUserModelId([string]$ShortcutPath) {
+    # Set System.AppUserModel.ID through the writable Windows IPropertyStore API.
+    $shortcutPath = Get-CanonicalPath $ShortcutPath
+    if (-not ('DeskPilotAumid' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeskPilotAumid {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct PropertyKey {
+    public Guid fmtid; public uint pid;
+    public PropertyKey(Guid g, uint p) { fmtid = g; pid = p; }
+  }
+  [StructLayout(LayoutKind.Explicit, Size = 24)]
+  public struct PropVariant {
+    [FieldOffset(0)] public ushort vt;
+    [FieldOffset(8)] public IntPtr pwszValue;
+  }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IPropertyStore {
+    void GetCount(out uint count);
+    void GetAt(uint index, out PropertyKey key);
+    void GetValue(ref PropertyKey key, out PropVariant value);
+    void SetValue(ref PropertyKey key, ref PropVariant value);
+    void Commit();
+  }
+  [DllImport("ole32.dll")] public static extern int PropVariantClear(ref PropVariant value);
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+  public static extern int SHGetPropertyStoreFromParsingName(string path, IntPtr pbc, int flags, ref Guid iid, out IPropertyStore store);
+  public static string Set(string path, string appId) {
+    var key = new PropertyKey(new Guid("9F4C416E-2048-4000-C0E0-CA0035BE0C63"), 5);
+    var iid = typeof(IPropertyStore).GUID;
+    IPropertyStore store;
+    int hr = SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 2, ref iid, out store);
+    if (hr != 0) return "open failed: " + hr;
+    var value = new PropVariant { vt = 31, pwszValue = Marshal.StringToCoTaskMemUni(appId) };
+    string result;
+    try { store.SetValue(ref key, ref value); store.Commit(); result = "ok"; }
+    catch (Exception e) { result = e.Message; }
+    finally { Marshal.FreeCoTaskMem(value.pwszValue); Marshal.ReleaseComObject(store); }
+    return result;
+  }
+  public static string Get(string path) {
+    var key = new PropertyKey(new Guid("9F4C416E-2048-4000-C0E0-CA0035BE0C63"), 5);
+    var iid = typeof(IPropertyStore).GUID;
+    IPropertyStore store;
+    int hr = SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 0, ref iid, out store);
+    if (hr != 0) return "open failed: " + hr;
+    try { PropVariant value; store.GetValue(ref key, out value); try { return value.vt == 31 && value.pwszValue != IntPtr.Zero ? Marshal.PtrToStringUni(value.pwszValue) : null; } finally { PropVariantClear(ref value); } }
+    catch (Exception e) { return "get failed: " + e.Message; }
+    finally { Marshal.ReleaseComObject(store); }
+  }
+}
+'@
+    }
+    $appId = 'DeskPilot.PrivateDesktopControl.1'
+    if ([DeskPilotAumid]::Set($shortcutPath,$appId) -cne 'ok') { throw 'Shortcut identity could not be assigned.' }
+    if ([DeskPilotAumid]::Get($shortcutPath) -cne $appId) { throw 'Shortcut identity verification failed.' }
 }
 
 function Set-StartupPreference([string]$InstallRoot, [switch]$Enabled) {
@@ -879,9 +955,10 @@ function Invoke-Installer {
         Assert-X64Environment
         $install = Assert-ManagedPath $InstallRoot 'DeskPilot'
         $data = Assert-ManagedPath $DataRoot 'DeskPilot'
+        $desktop = Get-DeskPilotDesktop
         $shortcut = Get-CanonicalPath $ShortcutPath
         if ((Split-Path -Leaf $shortcut) -ine 'DeskPilot.lnk') { throw 'The shortcut path must end in DeskPilot.lnk.' }
-        Assert-NoReparsePoint $shortcut
+        Assert-NoReparsePoint $shortcut -TrustedBase $desktop
         if (-not (Test-Path -LiteralPath (Split-Path $shortcut -Parent) -PathType Container)) { throw 'The desktop shortcut directory does not exist.' }
         $tempBase = Get-CanonicalPath $TempRoot
         if ($tempBase -eq [IO.Path]::GetPathRoot($tempBase)) { throw 'TEMP root cannot be a filesystem root.' }
@@ -909,8 +986,8 @@ function Invoke-Installer {
         $tunnelRoot = Join-Path $data 'bin'
         $permissionsPath = Join-Path $data 'permissions.txt'
         Assert-NoManagedProcesses $install $data
-        if (Test-Path -LiteralPath $data -and -not (Test-Path -LiteralPath $data -PathType Container)) { throw "Data root is not a directory: $data" }
-        if (Test-Path -LiteralPath $install -and -not (Test-Path -LiteralPath $install -PathType Container)) { throw "Install root is not a directory: $install" }
+        if ((Test-Path -LiteralPath $data) -and -not (Test-Path -LiteralPath $data -PathType Container)) { throw "Data root is not a directory: $data" }
+        if ((Test-Path -LiteralPath $install) -and -not (Test-Path -LiteralPath $install -PathType Container)) { throw "Install root is not a directory: $install" }
         Assert-NoReparseTree $runtimeRoot
         Assert-NoReparseTree $tunnelRoot
         Assert-NoReparseTree $install
@@ -957,7 +1034,7 @@ function Invoke-Installer {
         if ($tunnelExecutables.Count -ne 1) { throw 'The full tunnel-client archive must contain exactly one tunnel-client.exe.' }
         $tunnelStage = Join-Path $workRoot 'stage/bin'
         New-Item -ItemType Directory -Path $tunnelStage | Out-Null
-        Copy-Item -LiteralPath (Join-Path $tunnelExecutables[0].Directory.FullName '*') -Destination $tunnelStage -Recurse -Force
+        foreach ($child in (Get-ChildItem -LiteralPath $tunnelExecutables[0].Directory.FullName -Force)) { Copy-Item -LiteralPath $child.FullName -Destination $tunnelStage -Recurse -Force }
         Assert-NoReparseTree $tunnelStage
         Assert-OfficialBinarySignature (Join-Path $tunnelStage 'tunnel-client.exe') 'OpenAI' -AllowUnsigned
         $cloudflared = Join-Path $tunnelStage 'cloudflared.exe'
@@ -1010,7 +1087,7 @@ function Invoke-Installer {
             [pscustomobject]@{ Target = $install; Staged = $appStage; Backup = (Join-Path $appBackupRoot 'app') },
             [pscustomobject]@{ Target = (Join-Path $install 'runtime-manifest.json'); Staged = $runtimeManifestStage; Backup = (Join-Path $appBackupRoot 'runtime-manifest.json') },
             [pscustomobject]@{ Target = $profilePath; Staged = $profileStage; Backup = (Join-Path $dataBackupRoot 'profile.yaml') },
-            [pscustomobject]@{ Target = $shortcut; Staged = $shortcutStage; Backup = (Join-Path (Split-Path $shortcut -Parent) ".DeskPilot-shortcut-backup-$transactionId.lnk") },
+            [pscustomobject]@{ Target = $shortcut; Staged = $shortcutStage; Backup = (Join-Path (Split-Path $shortcut -Parent) ".DeskPilot-shortcut-backup-$transactionId.lnk"); TrustedBase = $desktop },
             [pscustomobject]@{ Target = $permissionsPath; Staged = $permissionsStage; Backup = (Join-Path $dataBackupRoot 'permissions.txt') }
         )
         $startupStage = $null
@@ -1028,6 +1105,10 @@ function Invoke-Installer {
             Invoke-TunnelDoctor -TunnelClient (Join-Path $tunnelRoot 'tunnel-client.exe') -ProfilePath $profileStage
         }
         $afterCommit = {
+            # OneDrive can strip a shortcut property store during sync. Re-apply
+            # and verify the AppUserModelID on the final desktop path so a failure
+            # rolls back the whole transaction rather than shipping a mis-tagged icon.
+            Set-ShortcutAppUserModelId -ShortcutPath $shortcut
             if ($EnableStartup) { Set-StartupPreference -InstallRoot $install -Enabled }
         }
         try {

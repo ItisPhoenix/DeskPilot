@@ -1,14 +1,14 @@
 # Release process
 
-DeskPilot v1.0.0 Beta is a public, manually published GitHub pre-release for Windows x64. Automatic `push`, `pull_request`, and tag triggers are disabled in the retained workflow files; they remain available for future `workflow_dispatch` use. No GitHub Actions success is claimed.
+DeskPilot v1.0.1 Beta is a public, manually published GitHub pre-release for Windows x64. Automatic `push`, `pull_request`, and tag triggers are disabled in the retained workflow files; they remain available for future `workflow_dispatch` use. No GitHub Actions success is claimed.
 
 ## Distribution policy
 
 - Publish the source repository publicly only after confirmed release-blocking security issues are resolved and the Beta limitations are documented.
-- Use a GitHub pre-release tagged `v1.0.0` and publish manually with GitHub CLI.
+- Use a GitHub pre-release tagged `v1.0.1` and publish manually with GitHub CLI.
 - Publish exactly these distribution artifacts:
-  - `DeskPilot-v1.0.0-windows-x64.zip`
-  - `Install-DeskPilot-v1.0.0.ps1`
+  - `DeskPilot-v1.0.1-windows-x64.zip`
+  - `Install-DeskPilot-v1.0.1.ps1`
   - `SHA256SUMS.txt`
 - The manual Beta is checksummed but **unattested** because no GitHub Actions artifact attestation was generated.
 - Do not bundle the OpenAI tunnel-client, Node.js runtime, or Microsoft WebView2 Runtime in the DeskPilot archive. The installer provisions them separately.
@@ -71,13 +71,13 @@ CHANGELOG.md
 PUBLISH.md
 RELEASE_NOTES.md
 docs/
-Install-DeskPilot-v1.0.0.ps1
+Install-DeskPilot-v1.0.1.ps1
 Uninstall-DeskPilot.ps1
 ```
 
 `server/node_modules` must contain production dependencies only. The archive must not contain credentials, tunnel profiles, local state, test reports, development dependencies, or an OpenAI admin key.
 
-Create `DeskPilot-v1.0.0-windows-x64.zip`, copy the installer to `Install-DeskPilot-v1.0.0.ps1`, and generate `SHA256SUMS.txt` from those exact two files. Recompute both digests after any repackaging or installer edit. Do not reuse an earlier checksum.
+Create `DeskPilot-v1.0.1-windows-x64.zip`, copy the installer to `Install-DeskPilot-v1.0.1.ps1`, and generate `SHA256SUMS.txt` from those exact two files. Recompute both digests after any repackaging or installer edit. Do not reuse an earlier checksum.
 
 Tracked release files must come from `git archive` for the release commit. Byte-compare the packaged installer with the committed installer extracted from that archive, not a CRLF-normalized working-tree copy.
 
@@ -95,9 +95,9 @@ Checksums and attestations are not Authenticode signatures. If digest, provenanc
 
 ## Installer dependency policy
 
-`Install-DeskPilot-v1.0.0.ps1` downloads dependencies separately from their official publishers:
+`Install-DeskPilot-v1.0.1.ps1` downloads dependencies separately from their official publishers:
 
-- `DeskPilot-v1.0.0-windows-x64.zip` and `SHA256SUMS.txt` from the official public v1.0.0 Beta release.
+- `DeskPilot-v1.0.1-windows-x64.zip` and `SHA256SUMS.txt` from the official public v1.0.1 Beta release.
 - Full `tunnel-client-v0.0.21-windows-amd64.zip` and `SHA256SUMS.txt` from `openai/tunnel-client` v0.0.21.
 - Node.js **v24.22.3** Windows x64 archive from `nodejs.org`, with pinned SHA-256 and OpenJS Foundation Authenticode verification.
 - Microsoft WebView2 bootstrapper from Microsoft's official fwlink when the Runtime is missing. The installer requires a valid Microsoft Corporation Authenticode signature, checks hash stability before execution, installs silently, verifies the registry result, and aborts before the app swap on failure.
@@ -108,14 +108,14 @@ The installer must enforce the protected dashboard profile: upstream `127.0.0.1:
 
 ## Unsigned Authenticode residual risk
 
-DeskPilot v1.0.0 Beta does not apply an Authenticode signature to `DeskPilot.exe`. Windows may show SmartScreen or unknown-publisher warnings. The manual Beta is checksummed but unattested. Do not advise users to disable SmartScreen, execution policy, or other operating-system protections to bypass a failed verification.
+DeskPilot v1.0.1 Beta does not apply an Authenticode signature to `DeskPilot.exe`. Windows may show SmartScreen or unknown-publisher warnings. The manual Beta is checksummed but unattested. Do not advise users to disable SmartScreen, execution policy, or other operating-system protections to bypass a failed verification.
 
 ## Manual publication
 
 1. Commit the final source, tests, and documentation, then push `main`.
 2. Package from that exact commit and verify extracted layout, source equality, executable version, and checksums.
-3. Create and push an annotated `v1.0.0` tag pointing to the release commit.
+3. Create and push an annotated `v1.0.1` tag pointing to the release commit.
 4. Make the repository public only after the security gate is clear.
-5. Create or update the GitHub release as a draft, then publish it manually as a prerelease with `gh release edit v1.0.0 --prerelease --draft=false`.
+5. Create or update the GitHub release as a draft, then publish it manually as a prerelease with `gh release edit v1.0.1 --prerelease --draft=false`.
 6. Upload the three artifacts and verify GitHub's downloaded copies against the local candidates.
 7. Verify anonymous access to the repository, README, release notes, and downloads without authentication.

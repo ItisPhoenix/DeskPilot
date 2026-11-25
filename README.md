@@ -2,7 +2,7 @@
 
 **Windows-first desktop control for ChatGPT, using the official OpenAI tunnel client.**
 
-DeskPilot v1.0.0 Beta is a source-first Windows MCP host. It lets a trusted ChatGPT session invoke explicitly enabled tools for terminal processes, files, screen capture, mouse input, and keyboard input on your desktop. This Beta has automated and mock-service validation; clean-VM installation, live ChatGPT, and physical desktop acceptance remain unverified as documented in [docs/release-validation.md](docs/release-validation.md).
+DeskPilot v1.0.1 Beta is a source-first Windows MCP host. It lets a trusted ChatGPT session invoke explicitly enabled tools for terminal processes, files, screen capture, mouse input, and keyboard input on your desktop. This Beta has automated and mock-service validation; clean-VM installation, live ChatGPT, and physical desktop acceptance remain unverified as documented in [docs/release-validation.md](docs/release-validation.md).
 
 DeskPilot is derived from [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP). The upstream MIT license and attribution are retained in [LICENSE](LICENSE), [NOTICE](NOTICE), and [UPSTREAM.md](UPSTREAM.md).
 
@@ -97,25 +97,27 @@ The tunnel transport needs no inbound firewall port. `tunnel-client` polls OpenA
 
 ## Install on Windows
 
-DeskPilot v1.0.0 Beta is distributed as a public GitHub pre-release. The release assets are:
+> **v1.0.0 is withdrawn** because of setup and build-metadata privacy defects and a missing archive asset. Its release notice and tag are retained with a withdrawal warning. Use v1.0.1 only.
 
-- `DeskPilot-v1.0.0-windows-x64.zip`
-- `Install-DeskPilot-v1.0.0.ps1`
+DeskPilot v1.0.1 Beta is distributed as a public GitHub pre-release. The release assets are:
+
+- `DeskPilot-v1.0.1-windows-x64.zip`
+- `Install-DeskPilot-v1.0.1.ps1`
 - `SHA256SUMS.txt`
 
-Download them only from the [official v1.0.0 Beta release](https://github.com/ItisPhoenix/DeskPilot/releases/tag/v1.0.0). Automatic GitHub Actions triggers are disabled; this Beta was validated and published manually. Exact evidence and unverified real-world checks are recorded in [docs/release-validation.md](docs/release-validation.md). No GitHub Actions pass is claimed.
+Download them only from the [official v1.0.1 Beta release](https://github.com/ItisPhoenix/DeskPilot/releases/tag/v1.0.1). Automatic GitHub Actions triggers are disabled; this Beta was validated and published manually. Exact evidence and unverified real-world checks are recorded in [docs/release-validation.md](docs/release-validation.md). No GitHub Actions pass is claimed.
 
 Before running the installer, compare both file hashes with `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash -LiteralPath .\DeskPilot-v1.0.0-windows-x64.zip, .\Install-DeskPilot-v1.0.0.ps1 -Algorithm SHA256
+Get-FileHash -LiteralPath .\DeskPilot-v1.0.1-windows-x64.zip, .\Install-DeskPilot-v1.0.1.ps1 -Algorithm SHA256
 Get-Content -LiteralPath .\SHA256SUMS.txt
 ```
 
 ### Before installation
 
 1. In [Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels), create or reuse a tunnel and associate it with the intended Platform organization and ChatGPT workspace.
-2. Copy the complete tunnel ID. DeskPilot v1.0.0 accepts the official format:
+2. Copy the complete tunnel ID. DeskPilot v1.0.1 accepts the official format:
 
    ```text
    ^tunnel_(?:[a-z0-9]{4}_)?[a-z0-9]{32}$
@@ -126,15 +128,15 @@ Get-Content -LiteralPath .\SHA256SUMS.txt
 
 ### Run the installer
 
-Download `Install-DeskPilot-v1.0.0.ps1` from the approved release and inspect it before running. From the folder containing the script:
+Download `Install-DeskPilot-v1.0.1.ps1` from the approved release and inspect it before running. From the folder containing the script:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Install-DeskPilot-v1.0.0.ps1
+powershell -ExecutionPolicy Bypass -File .\Install-DeskPilot-v1.0.1.ps1
 ```
 
 The installer:
 
-- Downloads `DeskPilot-v1.0.0-windows-x64.zip` and verifies the archive against `SHA256SUMS.txt`. The release workflow also checksums `Install-DeskPilot-v1.0.0.ps1`; verify both files before running the installer.
+- Downloads `DeskPilot-v1.0.1-windows-x64.zip` and verifies the archive against `SHA256SUMS.txt`. The release workflow also checksums `Install-DeskPilot-v1.0.1.ps1`; verify both files before running the installer.
 - Downloads the Microsoft WebView2 bootstrapper from Microsoft's official fwlink when needed, verifies a valid Microsoft Corporation Authenticode signature, checks hash stability before execution, installs silently, and verifies the installation in the registry. A failure aborts before the DeskPilot application swap.
 - Downloads portable Node.js **v24.22.3**, verifies its pinned SHA-256 checksum, and requires a valid OpenJS Foundation Authenticode signature.
 - Downloads the full official `tunnel-client-v0.0.21-windows-amd64.zip` asset from `openai/tunnel-client` v0.0.21 and verifies it against the publisher's `SHA256SUMS.txt`. Runtime-only client archives are not substitutes for the full client.
@@ -147,6 +149,13 @@ The normal installation is per-user. Release-asset access must be available to t
 After installation, open DeskPilot from the desktop shortcut and paste the restricted runtime key into the credential panel. Select **Remember on this Windows account with DPAPI** only if you want the key stored locally. Otherwise, supply it when you explicitly start the tunnel.
 
 DeskPilot does not start the tunnel during installation. Click **Start server** only when you are ready to connect.
+
+### Migrating from the withdrawn v1.0.0
+
+1. Verify `Install-DeskPilot-v1.0.1.ps1` and `SHA256SUMS.txt` from the v1.0.1 release.
+2. If v1.0.0 is installed, uninstall it with the v1.0.0 `Uninstall-DeskPilot.ps1` first. Add `-RemoveUserData` only if you intend to discard the saved permission mask, tunnel profile, and DPAPI-protected key.
+3. Run the v1.0.1 installer. It repairs in place, preserves the permission mask, and rotates the dashboard base path.
+4. Reuse the existing tunnel ID and restricted runtime key; the ChatGPT custom MCP connection and plugin need no change. Recreate the connection only if you deliberately rotate the tunnel.
 
 ## Connect ChatGPT
 
@@ -317,7 +326,7 @@ DeskPilot's controls reduce accidental exposure. They do not contain a malicious
 - **DPAPI is account-bound at-rest protection.** It does not protect secrets from same-user malware or an administrator.
 - **The tunnel is a transport, not privacy from OpenAI.** Tool arguments, results, screenshots, and normal app-level logs can pass through or be retained by the connected services under their policies.
 - **Process supervision is lifecycle control.** The Windows Job Object stops the launched tunnel process tree when DeskPilot exits; it is not a security sandbox.
-- **v1.0.0 Beta binaries are unsigned.** The manual release is checksummed but unattested; no GitHub Actions artifact attestation was generated. Checksums are not Authenticode code signing or independent build provenance. See [PUBLISH.md](PUBLISH.md).
+- **v1.0.1 Beta binaries are unsigned.** The manual release is checksummed but unattested; no GitHub Actions artifact attestation was generated. Checksums are not Authenticode code signing or independent build provenance. See [PUBLISH.md](PUBLISH.md).
 - **Custom TLS trust and outbound proxies are ignored.** The managed launch scrubs CA-bundle, proxy, Cloudflare, and credential-related overrides to keep the runtime key on the official control-plane path. Corporate TLS-inspecting proxies are not supported in this Beta.
 
 For hard isolation, use a separately managed virtual machine or dedicated workstation outside DeskPilot. DeskPilot does not create or claim that isolation.
@@ -339,7 +348,7 @@ See [SECURITY.md](SECURITY.md) for the full security policy and private reportin
 | Permissions are unexpectedly disabled | A missing or invalid `permissions.txt` fails closed. Review the file locally while DeskPilot is stopped; do not let an untrusted prompt re-enable categories. |
 | Startup is enabled but the tunnel is offline | This is expected. Sign-in startup opens only the tray app. Start the tunnel manually. |
 | PDF generation cannot find Chrome | Install a supported system Chrome yourself. DeskPilot does not provision a browser. |
-| Windows reports an unsigned executable | Verify `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1` against `SHA256SUMS.txt` from the official release. The manual Beta has no GitHub artifact attestation. v1.0.0 does not apply an Authenticode signature; do not disable SmartScreen as a workaround. |
+| Windows reports an unsigned executable | Verify `DeskPilot-v1.0.1-windows-x64.zip` and `Install-DeskPilot-v1.0.1.ps1` against `SHA256SUMS.txt` from the official release. The manual Beta has no GitHub artifact attestation. v1.0.1 does not apply an Authenticode signature; do not disable SmartScreen as a workaround. |
 
 **Emergency stop:** press `Ctrl+Alt+Shift+F12`, use **Emergency stop** in DeskPilot, or choose **Exit DeskPilot** from the tray. This stops the supervised tunnel process. It does not undo commands, file changes, or input already delivered.
 

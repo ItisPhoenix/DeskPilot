@@ -1,6 +1,6 @@
 # Contributing
 
-DeskPilot v1.0.0 Beta is a public, source-first Windows project. Contributions must preserve the deny-by-default permission model, the strict foreground-lease rules, the Host-validating dashboard proxy, upstream attribution, and the approved DeskPilot dashboard/wordmark/DP monogram.
+DeskPilot v1.0.1 Beta is a public, source-first Windows project. Contributions must preserve the deny-by-default permission model, the strict foreground-lease rules, the Host-validating dashboard proxy, upstream attribution, and the approved DeskPilot dashboard/wordmark/DP monogram.
 
 ## Before you start
 

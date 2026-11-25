@@ -14,7 +14,7 @@ The cleaned DeskPilot source baseline is upstream commit `9a101b17e44577f0baefa4
 
 ## DeskPilot-specific work
 
-DeskPilot v1.0.0 adds or changes:
+DeskPilot v1.0.1 adds or changes:
 
 - A native Windows launcher, system-tray experience, and approved DeskPilot dashboard/wordmark/DP monogram.
 - Private desktop-control MCP tools for visible windows, primary-screen capture, mouse, and keyboard.
@@ -32,7 +32,7 @@ DeskPilot v1.0.0 adds or changes:
 
 ## Inherited source and compatibility tests
 
-DeskPilot retains upstream source files and tests where they remain useful for compatibility or validation. Their presence does not mean every inherited feature is exposed or enabled in the managed DeskPilot runtime. The supported v1.0.0 product is the Windows host, native launcher, managed MCP server, and official tunnel path described in [README.md](README.md).
+DeskPilot retains upstream source files and tests where they remain useful for compatibility or validation. Their presence does not mean every inherited feature is exposed or enabled in the managed DeskPilot runtime. The supported v1.0.1 product is the Windows host, native launcher, managed MCP server, and official tunnel path described in [README.md](README.md).
 
 ## Independence and trademarks
 

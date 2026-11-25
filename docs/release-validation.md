@@ -1,10 +1,10 @@
-# DeskPilot v1.0.0 Beta release validation
+# DeskPilot v1.0.1 Beta release validation
 
 Validation date: **2026-11-25**
 
 ## Release method
 
-The owner authorized a manual public v1.0.0 Beta pre-release after confirmed release-blocking security issues were resolved. Automatic `push`, `pull_request`, and tag triggers are disabled in the retained GitHub Actions workflows; they remain available for future `workflow_dispatch` use. The checks below were run locally on Windows. **No GitHub Actions pass is claimed.**
+The owner authorized a manual public v1.0.1 Beta pre-release after confirmed release-blocking security issues were resolved. Automatic `push`, `pull_request`, and tag triggers are disabled in the retained GitHub Actions workflows; they remain available for future `workflow_dispatch` use. The checks below were run locally on Windows. **No GitHub Actions pass is claimed.**
 
 The release tag identifies the exact source commit used for packaging. Tracked release files are copied from `git archive` for that commit. Generated `dist`, production `node_modules`, and `DeskPilot.exe` come from the matching source and lockfiles; the installer is byte-compared with the committed installer extracted from that archive.
 
@@ -18,7 +18,7 @@ The release tag identifies the exact source commit used for packaging. Tracked r
 
 ## Reused successful evidence
 
-The following evidence was produced for the audited v1.0.0 candidate and reused where the affected code was unchanged:
+The following evidence was produced for the audited v1.0.0 candidate and reused for v1.0.1 where the affected code was unchanged:
 
 | Command | Result |
 |---|---|
@@ -37,6 +37,32 @@ The following evidence was produced for the audited v1.0.0 candidate and reused 
 | Current-tree and sanitized-history secret/privacy scans | Passed |
 | Workflow YAML parse and `actionlint` | Passed |
 | Official Node/tunnel checksums and Microsoft/OpenJS signatures | Passed |
+
+## v1.0.1 patch evidence
+
+The OneDrive shortcut, version-metadata, privacy-build, and packaging changes were rechecked on the v1.0.1 candidate:
+
+| Command | Result |
+|---|---|
+| `powershell -File test/deskpilot-installer-security.test.ps1` | 232 checks passed, including full transaction rollback/commit and OneDrive trusted-ancestor cases |
+| `powershell -File test/deskpilot-uninstaller-security.test.ps1` | 63 checks passed, including OneDrive Desktop acceptance and rejection of links below it |
+| `npm run build` (Node 24.22.1) | Passed |
+| `node test/run-all-tests.js --no-build` | 202 passed, 0 failed, 13 environment skips |
+| `node test/repro/run-repro.js` | 16 passed, 0 failed |
+| `node test/integration/run-all-integration-tests.js` | 3 passed, 0 failed |
+| `npm run scan:secrets` | Passed; 465 worktree text blobs scanned |
+| `npm audit --audit-level=high` | Passed; 0 vulnerabilities |
+| `npm run test:managed` | Passed; deny-by-default, credential isolation, and MCP acceptance checks |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo check --locked --bin deskpilot` | Passed (launcher v1.0.1) |
+| `cargo clippy --locked --all-targets -- -D warnings` | Passed |
+| `cargo test --locked` | 39 passed, 0 failed |
+| `cargo audit --file launcher/Cargo.lock` | 0 vulnerabilities; the two documented `proc-macro-error`/`glib` warnings remain and are absent from the Windows MSVC target graph |
+| `scripts/build-private-release.ps1` | `NATIVE_BUILD_PRIVACY_PASS`; no private build path strings in `DeskPilot.exe` |
+| `deskpilot.exe --self-test` | Exit 0; `%LOCALAPPDATA%\DeskPilot\self-test-modern.txt` = `DPAPI_AND_JOB_PASS` |
+| Executable version resource | `FileVersion=1.0.1.0`, `ProductVersion=1.0.1` |
+| Version identifiers | `package.json`, `package-lock.json`, `src/version.ts`, `launcher/Cargo.toml`, `launcher/Cargo.lock`, `launcher/build.rs`, installer pin, and installer test pin all agree on 1.0.1 |
+| Installed branding assets | `icon.png`, `deskpilot.ico`, `deskpilot-wordmark.svg`, `deskpilot-mark.svg` SHA-256 unchanged; no branding asset was modified or regenerated |
 
 The 13 main-suite skips are reported by the test runner and are not counted as passes. They cover unavailable `pwsh`, a OneDrive-redirected PowerShell profile, Windows-inapplicable POSIX/process-group cases, a second Windows volume requiring admin rights, and file-symlink creation requiring Developer Mode or elevation.
 
@@ -100,6 +126,19 @@ The changed launcher is rebuilt from the final source commit. The unchanged Type
 
 The authoritative artifact sizes and hashes are recorded in `SHA256SUMS.txt` and the GitHub release metadata. They are not duplicated inside the archive, avoiding a circular digest.
 
+## v1.0.1 artifact verification
+
+| Check | Result |
+|---|---|
+| Tracked files extracted with `git archive` for the release commit | Passed; installer byte-compared with the committed blob (SHA-256 `2f79ce2f…c2e9c9`) |
+| `node scripts/test-release-layout.mjs <stage>` | `RELEASE_LAYOUT_PASS` |
+| Required/forbidden archive entries | Passed; no local config, policy, DPAPI key, tunnel profile, test report, dev dependency, or source/test tree |
+| `SHA256SUMS.txt` independent verification | Passed for both distribution files |
+| Decompressed asset and binary privacy scan | 19,767 files scanned across the extracted archive, including `DeskPilot.exe`, all DLL/`.node` binaries, and brand images; 0 personal paths, tunnel IDs, tokens, or real credentials |
+| Third-party pattern review | 22 generic-pattern hits in upstream `node_modules` only (JSDoc examples, a README sample password, PEM-header string checks, and a public JWT test vector); reviewed as benign, no personal information or usable credential |
+| Native binary path check | `NATIVE_BUILD_PRIVACY_PASS`; no `USERPROFILE`, `D:\DeskPilot`, `CARGO_HOME`, `RUSTUP_HOME`, or `TEMP` path strings |
+| Branding assets | SHA-256 values unchanged; assets neither modified nor regenerated |
+
 ## Not verified for this Beta
 
 - Installation on a separate clean Windows machine or VM. The available VMware VM required a password for VIX access, and no password-free Windows Sandbox was installed.
@@ -112,4 +151,4 @@ These limitations are not represented as passed checks.
 
 ## Readiness
 
-The candidate is suitable for a **public v1.0.0 Beta pre-release** with the documented limitations. It is not represented as a fully accepted stable release. DeskPilot is not an OS-level sandbox; Terminal permission can bypass file-workspace and command-blocklist controls. The manual Beta is checksummed but unattested, and DeskPilot binaries are not Authenticode-signed.
+The candidate is suitable for a **public v1.0.1 Beta pre-release** with the documented limitations. It is not represented as a fully accepted stable release. DeskPilot is not an OS-level sandbox; Terminal permission can bypass file-workspace and command-blocklist controls. The manual Beta is checksummed but unattested, and DeskPilot binaries are not Authenticode-signed.

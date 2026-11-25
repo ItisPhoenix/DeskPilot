@@ -59,7 +59,7 @@ fn cargo_lock_identifies_the_deskpilot_launcher_package() {
         .split("[[package]]")
         .find(|section| section.contains("name = \"deskpilot-launcher\""))
         .unwrap_or_else(|| panic!("Cargo.lock has no deskpilot-launcher root package"));
-    assert!(root.contains("version = \"1.0.0\""));
+    assert!(root.contains(&format!("version = \"{}\"", env!("CARGO_PKG_VERSION"))));
     assert!(!lock.contains("name = \"desktop-commander-local\""));
 }
 

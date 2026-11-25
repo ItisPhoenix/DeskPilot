@@ -4,9 +4,25 @@ All notable changes to DeskPilot are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and DeskPilot follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1 Beta] - 2026-11-25
+
+Corrected manual patch release replacing the withdrawn v1.0.0 Beta. v1.0.0 remains tagged and published with a withdrawal notice.
+
+### Fixed
+
+- OneDrive-redirected Desktop compatibility: the installer and uninstaller now resolve the Desktop known folder and trust only that folder's reparse ancestors, while still rejecting links on the shortcut itself or anywhere below Desktop. The uninstaller validates the shortcut parent against the resolved Desktop instead of a hard-coded folder name.
+- The AppUserModelID is re-applied and verified on the final desktop shortcut inside the installation transaction, so a OneDrive sync that strips the property rolls the install back instead of leaving a mis-tagged icon.
+- The published v1.0.1 release contains all three artifacts, including the Windows x64 archive that was absent from v1.0.0.
+- Native launcher rebuild with private build paths remapped out of `DeskPilot.exe`; all release assets, including decompressed archives and binaries, were scanned for personal information and credentials.
+- Version metadata is synchronized across package, lockfile, launcher manifest, Rust lockfile, and Win32 version resource, including the NUL terminators in the version strings.
+
+### Verification
+
+Installer security suite passed 232 checks and uninstaller security suite passed 63 checks, including full transaction rollback/commit coverage and OneDrive shortcut cases. Version, privacy, archive-layout, and checksum gates are recorded in [docs/release-validation.md](docs/release-validation.md). This patch was published manually; no GitHub Actions pass is claimed.
+
 ## [1.0.0 Beta] - 2026-11-25
 
-Initial public source-first Windows pre-release.
+Initial public source-first Windows pre-release. Withdrawn: setup and build-metadata privacy defects plus a missing archive asset.
 
 ### Added
 
