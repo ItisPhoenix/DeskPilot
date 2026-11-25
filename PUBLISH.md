@@ -106,6 +106,8 @@ Checksums and attestations are not Authenticode signatures. If digest, provenanc
 
 The installer must not accept a runtime-only tunnel-client archive, request an OpenAI admin key, write the runtime key into YAML, enable a desktop permission category by default, enable sign-in startup by default, start the tunnel automatically, or launch DeskPilot by default. Launch remains explicit opt-in with `-LaunchDeskPilot`.
 
+The managed `mcp.commands[].command` must use forward-slash paths for the packaged Node executable and launcher script. `tunnel-client` v0.0.21 shell-tokenizes that value and strips backslashes on Windows, which silently prevents the MCP child from starting. The launcher accepts either separator form only after exact path normalization.
+
 The installer must enforce the protected dashboard profile: upstream `127.0.0.1:18080`, `allow_remote: false`, `open_browser: false`, and a freshly generated 144-bit random `/deskpilot-*` base path on every install or repair. It must remove Cloudflare process selectors, CA bundles, and proxy overrides from existing profiles. The launcher independently refuses a profile that does not match, scrubs security-sensitive inherited environment variables, and passes enforcing runtime flags.
 
 ## Unsigned Authenticode residual risk

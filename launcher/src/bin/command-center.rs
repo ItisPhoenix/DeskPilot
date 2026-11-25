@@ -280,11 +280,17 @@ impl Modern {
             dashboard_proxy::UPSTREAM_ADDR,
             dashboard_path
         );
-        let r = launch(
-            tunnel_client.path.to_string_lossy().as_ref(),
+        let log_path = runtime_log_path();
+        if log_path.exists() && fs::remove_file(&log_path).is_err() {
+            self.fail("Could not reset the tunnel diagnostic log. Start canceled.");
+            return;
+        }
+        let r = launch_with_output(
+            Path::new(tunnel_client.path.to_string_lossy().as_ref()),
             &args,
             &key,
             true,
+            Some(&log_path),
         );
         unsafe {
             key.as_mut_vec().fill(0);
@@ -342,9 +348,21 @@ impl Modern {
         }
         if let Some(r) = self.run.as_ref() {
             if unsafe { WaitForSingleObject(r.process, 0) } == WAIT_OBJECT_0 {
+                let code = process_exit_code(r.process);
                 self.run.take();
                 self.ready = false;
-                self.fail("Tunnel exited. Check the runtime key or profile, then retry.");
+                let detail = runtime_error_summary();
+                let message = match (code, detail.is_empty()) {
+                    (Some(code), false) => format!(
+                        "Tunnel exited with code {code}. {detail} Review the runtime key or profile, then retry."
+                    ),
+                    (Some(code), true) => format!(
+                        "Tunnel exited with code {code}. Review the runtime key or profile, then retry."
+                    ),
+                    (None, false) => format!("Tunnel exited. {detail} Review the runtime key or profile, then retry."),
+                    (None, true) => "Tunnel exited. Review the runtime key or profile, then retry.".to_string(),
+                };
+                self.fail(&message);
                 return;
             }
             let ready = dashboard_ready_for(r);

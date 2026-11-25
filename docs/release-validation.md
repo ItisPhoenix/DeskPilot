@@ -142,6 +142,9 @@ The authoritative artifact sizes and hashes are recorded in `SHA256SUMS.txt` and
 | Isolated end-to-end installation | Passed with the exact published archive and the actual installer into isolated `InstallRoot`, `DataRoot`, `TempRoot`, and `Desktop` paths; required files, default-deny policy, protected profile, runtime manifest and shortcut verified; no app process launched |
 | Transaction rollback | Passed with a single fault injected at the pre-commit validation boundary; application, data, runtime, profile and shortcut all restored, no transaction backup left behind |
 | Doctor Windows preflight | All doctor checks remain fatal except the v0.0.21 `mcp_command_executable` false negative; the exact staged `node.exe` is verified directly instead |
+| Branded terminal display | Rendered in Windows PowerShell and asserted: DeskPilot heading with lime ANSI accent, overall bar and percentage, per-stage OK/active/pending markers, live extracted-file count, elapsed/remaining time, and success/failure summaries; 263 installer security checks pass |
+| Windows runtime root cause | Sanitized `tunnel-client run` stderr showed `fork/exec C:Users...node.exe: The system cannot find the file specified.` with exit 1: v0.0.21 strips backslashes from `mcp.command`. No credential or tunnel-ID values were printed. |
+| Runtime fix and verified startup | Installer writes forward-slash MCP paths; launcher accepts either separator form after exact normalization. With the corrected profile and the locally stored key held in memory only, the real tunnel reached `GET /health` HTTP 200 before the verification process was stopped. 40 Rust tests pass, including redaction of tunnel IDs, keys, and user paths. |
 
 ## Not verified for this Beta
 

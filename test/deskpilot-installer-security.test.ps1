@@ -497,7 +497,7 @@ mcp:
         Assert ($updated -match 'base_path: "/deskpilot-[A-Za-z0-9_-]{24}"' -and $updated -notmatch 'deskpilot-abcdefghijklmnopqrstuvwx') 'The dashboard base path was not rotated to a fresh random value.'
         Assert ($updated -match 'level: debug' -and $updated -match 'startup_wait_timeout: 45s') 'Unrelated profile settings were lost.'
         Assert ($updated -match 'channel: other\r?\n\s+command: other\.exe') 'A non-main MCP channel was changed.'
-        Assert ($updated -match 'managed-launcher\.mjs' -and $updated -match 'runtime\\\\node\.exe') 'Main MCP command was not updated.'
+        Assert ($updated -match 'managed-launcher\.mjs' -and $updated -match 'runtime/node\.exe') 'Main MCP command was not updated with a parser-safe path.'
     }
 
     Test-Case 'fresh profiles disable browser auto-open and use a strict ID' {
@@ -746,6 +746,51 @@ mcp:
             }
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         }
+    }
+
+    Test-Case 'installation progress reports stage percentage elapsed and estimate' {
+        Assert ($source -match "Write-Progress -Activity 'DeskPilot installation'") 'Progress activity name is missing.'
+        Assert ($source -match 'ContentLength') 'Download progress has no total byte count.'
+        Assert ($source -match 'Get-InstallTimeEstimate') 'Elapsed/remaining time estimate is missing.'
+        Assert ($source -match 'Write-InstallProgress -Stage ''Downloading pinned releases''') 'Download stage progress is missing.'
+        Assert ($source -match 'Write-InstallProgress -Stage ''Validating archive''') 'Archive validation progress is missing.'
+        Assert ($source -match 'Write-InstallProgress -Stage ''Extracting archive''') 'Extracted file count progress is missing.'
+        Assert ($source -match 'Complete-InstallProgress') 'Completion status is missing.'
+        Assert ((Format-InstallDuration ([TimeSpan]::FromSeconds(65))) -ceq '00:01:05') 'Duration formatting is wrong.'
+        $estimate = Get-InstallTimeEstimate -Start ([datetime]::Now.AddSeconds(-10)) -Completed 50 -Total 100
+        Assert ($null -ne $estimate.Remaining) 'Remaining time was not estimated for partial work.'
+        $empty = Get-InstallTimeEstimate -Start ([datetime]::Now) -Completed 0 -Total 100
+        Assert ($null -eq $empty.Remaining) 'Remaining time must not be estimated before work starts.'
+        $script:InstallProgressStart = [datetime]::Now
+        $script:InstallProgressCompleted = $false
+        Write-InstallProgress -Stage 'Fixture' -Detail '1 of 2' -Percent 50 -Remaining ([TimeSpan]::FromSeconds(5))
+        Complete-InstallProgress 'Fixture complete'
+        Assert ($script:InstallProgressCompleted) 'Completion state was not recorded.'
+    }
+
+    Test-Case 'branded terminal display renders heading overall bar stages counts and summary' {
+        $script:DPForceDisplay = $true
+        $script:DPAnsi = $true
+        Initialize-DeskPilotDisplayState
+        $script:DPFilesTotal = 100
+        $script:DPFilesDone = 42
+        $frame = @(Get-InstallDisplayFrame -Stage 'Downloading pinned releases' -Detail 'DeskPilot-v1.0.1-windows-x64.zip: 20.7/49.2 MB' -Percent 55 -Elapsed '00:01:05' -Remaining '00:00:48' -Summary '')
+        Assert ($frame.Count -eq 14) "Unexpected display height: $($frame.Count)"
+        Assert ($frame[0] -match 'Desk' -and $frame[0] -match 'Pilot') 'DeskPilot heading is missing.'
+        Assert ($frame[0] -match [string][char]0x1B) 'Lime ANSI accent is missing.'
+        Assert ($frame[2] -match '\[#+\.+\]' -and $frame[2] -match '55%') 'Overall progress bar/percentage is missing.'
+        Assert ($frame[2] -match '00:01:05' -and $frame[2] -match '00:00:48') 'Elapsed/remaining time is missing.'
+        Assert (@($frame | Where-Object { $_ -match '>>' }).Count -eq 1) 'Active stage marker is missing.'
+        Assert (@($frame | Where-Object { $_ -match 'OK' }).Count -ge 1) 'Completed stage marker is missing.'
+        Assert (@($frame | Where-Object { $_ -match '--' }).Count -ge 1) 'Pending stage marker is missing.'
+        Assert (@($frame | Where-Object { $_ -match 'Files extracted: 42 / 100' }).Count -eq 1) 'Live extracted file count is missing.'
+        Assert (@($frame | Where-Object { $_ -match 'DeskPilot-v1.0.1-windows-x64.zip' }).Count -eq 1) 'Current activity detail is missing.'
+        $done = @(Get-InstallDisplayFrame -Stage 'Complete' -Detail 'Finalizing' -Percent 100 -Elapsed '00:02:00' -Remaining '00:00:00' -Summary 'SUCCESS  DeskPilot is installed.')
+        Assert (@($done | Where-Object { $_ -match 'SUCCESS  DeskPilot is installed' }).Count -eq 1) 'Success summary is missing.'
+        $failed = @(Get-InstallDisplayFrame -Stage 'Failed' -Detail 'fixture failure' -Percent 100 -Elapsed '00:00:10' -Remaining '00:00:00' -Summary 'FAILED  Installation failed: fixture failure')
+        Assert (@($failed | Where-Object { $_ -match 'Installation failed: fixture failure' }).Count -eq 1) 'Failure summary is missing.'
+        $script:DPForceDisplay = $false
+        $script:DPAnsi = $false
     }
 
     Test-Case 'safe cleanup removes read-only managed files' {

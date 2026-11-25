@@ -17,6 +17,9 @@ Corrected manual patch release replacing the withdrawn v1.0.0 Beta. v1.0.0 remai
 - Version metadata is synchronized across package, lockfile, launcher manifest, Rust lockfile, and Win32 version resource, including the NUL terminators in the version strings.
 - The Windows x64 ZIP is now built with forward-slash relative entry names. The previous v1.0.1 archive used `Compress-Archive` and could not be extracted by the installer's safe extractor; installer path protections were left unchanged.
 - `tunnel-client doctor` v0.0.21 tokenizes an absolute Windows MCP path with a shell lexer that strips backslashes, so `mcp_command_executable` always failed on Windows. The installer now verifies the exact staged `node.exe` directly for that one check; every other doctor failure remains fatal.
+- Replaced the basic progress bars with a branded in-place terminal display: DeskPilot wordmark with lime accents, overall bar and percentage, per-stage completion markers, live extracted file count, elapsed/remaining time, and a success or failure summary. It redraws in place without scrolling and falls back to `Write-Progress` when output is redirected.
+- Fixed the actual runtime tunnel failure: `tunnel-client` v0.0.21 tokenizes `mcp.command` with a shell lexer that strips backslashes, so the absolute Windows `node.exe` path became invalid and the MCP child never started. The installer now writes parser-safe forward-slash paths, and the launcher accepts either separator form after exact normalization, rejecting any other path difference.
+- Runtime failures now report the tunnel-client exit code and a sanitized stderr summary (tunnel IDs, API keys, and user paths are redacted) instead of a generic message.
 
 ### Verification
 

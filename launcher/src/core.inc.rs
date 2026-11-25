@@ -228,21 +228,40 @@ fn non_verbatim_path(path: &Path) -> String {
     path.strip_prefix(r"\\?\").unwrap_or(&path).to_string()
 }
 
+fn normalized_command_separators(value: &str) -> String {
+    // tunnel-client v0.0.21 strips backslashes while tokenizing mcp.command,
+    // so the installer writes forward slashes. Accept either separator form
+    // but compare the exact path after normalization; no other difference is
+    // allowed.
+    value.replace('\\', "/")
+}
+
 fn profile_uses_trusted_command(profile: &str, node: &Path, server: &Path) -> bool {
     let command = format!(
         "\"{}\" \"{}\"",
         non_verbatim_path(node),
         non_verbatim_path(&server.join("managed-launcher.mjs"))
     );
-    let Ok(expected) = serde_json::to_string(&command) else {
+    let Ok(expected_json) = serde_json::to_string(&command) else {
         return false;
     };
     let mut commands = profile
         .lines()
         .map(str::trim)
         .filter_map(|line| line.strip_prefix("command:"));
-    matches!(commands.next(), Some(actual) if actual.trim() == expected)
-        && commands.next().is_none()
+    let Some(actual_json) = commands.next() else {
+        return false;
+    };
+    if commands.next().is_some() {
+        return false;
+    }
+    let (Ok(expected), Ok(actual)) = (
+        serde_json::from_str::<String>(&expected_json),
+        serde_json::from_str::<String>(actual_json.trim()),
+    ) else {
+        return false;
+    };
+    normalized_command_separators(&actual) == normalized_command_separators(&expected)
 }
 
 fn yaml_section_value<'a>(profile: &'a str, section: &str, child: &str) -> Option<&'a str> {
@@ -1400,6 +1419,95 @@ fn blocked_environment_name(name: &str) -> bool {
     EXACT.contains(&upper.as_str()) || PREFIXES.iter().any(|prefix| upper.starts_with(prefix))
 }
 
+fn runtime_log_path() -> PathBuf {
+    dir().join("tunnel-runtime.log")
+}
+
+fn redact_runtime_value(value: &str) -> String {
+    let mut redacted = String::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let rest = &value[index..];
+        if rest.starts_with("tunnel_") {
+            let end = rest
+                .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+                .unwrap_or(rest.len());
+            redacted.push_str("[TUNNEL_ID]");
+            index += end;
+            continue;
+        }
+        if let Some(key) = rest.strip_prefix("sk-") {
+            let end = key
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+                .unwrap_or(key.len());
+            if end >= 20 {
+                redacted.push_str("[REDACTED_KEY]");
+                index += 3 + end;
+                continue;
+            }
+        }
+        if let Some(after_user) = rest.strip_prefix("C:\\Users\\") {
+            let end = after_user
+                .find('\\')
+                .map(|position| 9 + position)
+                .unwrap_or(rest.len());
+            redacted.push_str("[USER]");
+            index += end;
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        redacted.push(ch);
+        index += ch.len_utf8();
+    }
+    redacted
+}
+
+fn runtime_error_summary() -> String {
+    let Ok(text) = fs::read_to_string(runtime_log_path()) else {
+        return String::new();
+    };
+    let mut lines: Vec<String> = text
+        .lines()
+        .filter(|line| line.contains("\"level\":\"ERROR\"") || line.starts_with("start tunnel-client"))
+        .map(|line| redact_runtime_value(line.trim()))
+        .collect();
+    if lines.is_empty() {
+        lines = text
+            .lines()
+            .rev()
+            .take(2)
+            .map(|line| redact_runtime_value(line.trim()))
+            .collect();
+        lines.reverse();
+    }
+    lines
+        .into_iter()
+        .rev()
+        .take(2)
+        .map(|line| {
+            if line.len() > 320 {
+                format!("{}…", &line[..320])
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn process_exit_code(process: HANDLE) -> Option<u32> {
+    let mut code = 0u32;
+    if unsafe { GetExitCodeProcess(process, &mut code) } != 0 {
+        Some(code)
+    } else {
+        None
+    }
+}
+
 fn launch_with_output(
     exe: &Path,
     args: &str,
@@ -1552,10 +1660,6 @@ fn launch_with_output(
             dashboard: None,
         })
     }
-}
-
-fn launch(exe: &str, args: &str, key: &str, managed: bool) -> Result<Running, String> {
-    launch_with_output(Path::new(exe), args, key, managed, None)
 }
 
 struct ProcessHandle(HANDLE, u32);
@@ -1816,6 +1920,21 @@ mod tests {
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[test]
+    fn runtime_error_summary_never_exposes_keys_or_tunnel_ids() {
+        let raw = format!(
+            "{{\"level\":\"ERROR\",\"error\":\"tunnel_{}_0123456789abcdef0123456789abcdef sk-{}-abcdefghijklmnopqrstuvwx C:\\Users\\someone\\AppData\\Local\\node.exe\"}}",
+            "ab12", "proj"
+        );
+        let redacted = redact_runtime_value(&raw);
+        assert!(!redacted.contains("tunnel_ab12"));
+        assert!(!redacted.contains("sk-proj"));
+        assert!(!redacted.contains("someone"));
+        assert!(redacted.contains("[TUNNEL_ID]"));
+        assert!(redacted.contains("[REDACTED_KEY]"));
+        assert!(redacted.contains("[USER]"));
+    }
+
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct Scratch(PathBuf);
@@ -2010,6 +2129,14 @@ mod tests {
         .unwrap();
         let valid = format!("mcp:\n  commands:\n    - channel: main\n      command: {command}\n");
         assert!(profile_uses_trusted_command(&valid, node, server));
+        let forward_value = format!(
+            "\"{}\" \"{}\"",
+            node.display().to_string().replace('\\', "/"),
+            server.join("managed-launcher.mjs").display().to_string().replace('\\', "/")
+        );
+        let forward = serde_json::to_string(&forward_value).unwrap();
+        let forward_profile = format!("mcp:\n  commands:\n    - channel: main\n      command: {forward}\n");
+        assert!(profile_uses_trusted_command(&forward_profile, node, server));
         assert!(!profile_uses_trusted_command(
             "mcp:\n  commands:\n    - channel: main\n      command: \"node.exe managed-launcher.mjs\"\n",
             node,

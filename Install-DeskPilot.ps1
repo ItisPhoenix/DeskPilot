@@ -26,6 +26,260 @@ function Write-Step([string]$Message) {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+$script:InstallProgressStart = $null
+$script:InstallProgressCompleted = $false
+$script:InstallProgressFailure = ''
+$script:DPDisplayReady = $false
+$script:DPDisplayTop = 0
+$script:DPAnsi = $false
+$script:DPForceDisplay = $false
+$script:DPFilesDone = 0
+$script:DPFilesTotal = 0
+$script:DPStageIndex = 0
+$script:DPStages = @(
+    'Preparing',
+    'Checking Microsoft Edge WebView2 Runtime',
+    'Downloading pinned releases',
+    'Validating and extracting archives',
+    'Staging managed components',
+    'Validating the staged installation',
+    'Committing installation',
+    'Finalizing'
+)
+$script:DPStageState = @{}
+
+function Initialize-DeskPilotDisplayState {
+    if ($null -eq $script:DPStages) {
+        $script:DPStages = @(
+            'Preparing',
+            'Checking Microsoft Edge WebView2 Runtime',
+            'Downloading pinned releases',
+            'Validating and extracting archives',
+            'Staging managed components',
+            'Validating the staged installation',
+            'Committing installation',
+            'Finalizing'
+        )
+    }
+    if ($null -eq $script:DPStageState) { $script:DPStageState = @{} }
+    if ($null -eq $script:DPFilesDone) { $script:DPFilesDone = 0 }
+    if ($null -eq $script:DPFilesTotal) { $script:DPFilesTotal = 0 }
+    if ($null -eq $script:DPStageIndex) { $script:DPStageIndex = 0 }
+}
+
+function Initialize-InstallProgress {
+    Initialize-DeskPilotDisplayState
+    $script:InstallProgressStart = [datetime]::Now
+    $script:InstallProgressCompleted = $false
+    $script:InstallProgressFailure = ''
+    $script:DPStageIndex = 0
+    $script:DPFilesDone = 0
+    $script:DPFilesTotal = 0
+    foreach ($stage in $script:DPStages) { $script:DPStageState[$stage] = 'pending' }
+    $script:DPStageState[$script:DPStages[0]] = 'active'
+    $script:DPAnsi = Enable-DeskPilotVirtualTerminal
+    $script:DPDisplayReady = $false
+    if (-not $script:DPForceDisplay) {
+        try {
+            if (-not [Console]::IsOutputRedirected -and [Environment]::UserInteractive) {
+                $script:DPDisplayTop = [Console]::CursorTop
+                [Console]::CursorVisible = $false
+                $script:DPDisplayReady = $true
+                Write-InstallDisplay -Stage $script:DPStages[0] -Detail 'Starting' -Percent 0 -Remaining $null -Summary ''
+            }
+        } catch { $script:DPDisplayReady = $false }
+    }
+    Write-InstallProgress -Stage $script:DPStages[0] -Detail 'Validating environment' -Percent 1 -Remaining $null
+}
+
+function Enable-DeskPilotVirtualTerminal {
+    if (-not ('DeskPilotConsole' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeskPilotConsole {
+  [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+  [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr handle, out int mode);
+  [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, int mode);
+}
+'@
+    }
+    try {
+        $handle = [DeskPilotConsole]::GetStdHandle(-11)
+        if ($handle -eq [IntPtr]::Zero) { return $false }
+        $mode = 0
+        if (-not [DeskPilotConsole]::GetConsoleMode($handle, [ref]$mode)) { return $false }
+        return [DeskPilotConsole]::SetConsoleMode($handle, ($mode -bor 0x0004))
+    } catch { return $false }
+}
+
+function Get-DeskPilotAccent { if ($script:DPAnsi) { return "$([char]27)[38;2;194;244;99m" } return '' }
+function Get-DeskPilotMuted { if ($script:DPAnsi) { return "$([char]27)[38;2;160;174;166m" } return '' }
+function Get-DeskPilotReset { if ($script:DPAnsi) { return "$([char]27)[0m" } return '' }
+
+function Format-InstallDuration([TimeSpan]$Value) {
+    return ('{0:hh\:mm\:ss}' -f $Value)
+}
+
+function Get-InstallTimeEstimate([datetime]$Start, [double]$Completed, [double]$Total) {
+    $elapsed = [datetime]::Now - $Start
+    if ($Completed -le 0 -or $Total -le 0 -or $Total -le $Completed) {
+        return [pscustomobject]@{ Elapsed = $elapsed; Remaining = $null }
+    }
+    $seconds = [Math]::Max(0.001, $elapsed.TotalSeconds)
+    $remainingSeconds = ($Total - $Completed) / ($Completed / $seconds)
+    return [pscustomobject]@{ Elapsed = $elapsed; Remaining = [TimeSpan]::FromSeconds([Math]::Ceiling($remainingSeconds)) }
+}
+
+function Set-InstallStageState([string]$Stage) {
+    Initialize-DeskPilotDisplayState
+    $index = [Array]::IndexOf($script:DPStages, $Stage)
+    if ($index -lt 0) {
+        foreach ($name in $script:DPStages) { $script:DPStageState[$name] = 'done' }
+        return
+    }
+    for ($i = 0; $i -lt $script:DPStages.Count; $i++) {
+        $name = $script:DPStages[$i]
+        $script:DPStageState[$name] = if ($i -lt $index) { 'done' } elseif ($i -eq $index) { 'active' } else { 'pending' }
+    }
+    $script:DPStageIndex = $index
+}
+
+function Get-InstallDisplayFrame([string]$Stage, [string]$Detail, [int]$Percent, [string]$Elapsed, [string]$Remaining, [string]$Summary) {
+    Initialize-DeskPilotDisplayState
+    Set-InstallStageState $Stage
+    $accent = Get-DeskPilotAccent
+    $muted = Get-DeskPilotMuted
+    $reset = Get-DeskPilotReset
+    $barWidth = 28
+    $value = [Math]::Min(100, [Math]::Max(0, $Percent))
+    $filled = [int][Math]::Round($barWidth * $value / 100.0)
+    $bar = ('#' * $filled) + ('.' * ($barWidth - $filled))
+    $lines = @()
+    $lines += "  Desk${accent}Pilot${reset}   $($muted)Installer - v1.0.1 Beta$reset"
+    $lines += '  ' + $accent + ('-' * 72) + $reset
+    $lines += "  ${accent}[$bar]$reset  $value%   $($muted)Elapsed $Elapsed  Remaining $Remaining$reset"
+    foreach ($name in $script:DPStages) {
+        $state = [string]$script:DPStageState[$name]
+        $marker = if ($state -eq 'done') { "${accent}OK$reset" } elseif ($state -eq 'active') { "${accent}>>$reset" } else { "${muted}--$reset" }
+        $lines += "  $marker  $name"
+    }
+    $lines += "  $($muted)Activity: $Detail$reset"
+    $files = if ($script:DPFilesTotal -gt 0) { "$($script:DPFilesDone) / $($script:DPFilesTotal)" } else { '0 / 0' }
+    $lines += "  $($muted)Files extracted: $files$reset"
+    $lines += "  $Summary"
+    return $lines
+}
+
+function Write-InstallDisplay([string]$Stage, [string]$Detail, [int]$Percent, $Remaining, [string]$Summary) {
+    $elapsed = if ($null -eq $script:InstallProgressStart) { '00:00:00' } else { Format-InstallDuration ([datetime]::Now - $script:InstallProgressStart) }
+    $remainingText = if ($null -eq $Remaining) { 'estimating' } else { Format-InstallDuration $Remaining }
+    $lines = Get-InstallDisplayFrame -Stage $Stage -Detail $Detail -Percent $Percent -Elapsed $elapsed -Remaining $remainingText -Summary $Summary
+    if ($script:DPDisplayReady) {
+        [Console]::SetCursorPosition(0, $script:DPDisplayTop)
+        try {
+            $width = [Math]::Max(72, [Console]::WindowWidth - 1)
+            foreach ($line in $lines) {
+                $visible = [regex]::Replace($line, "$([char]27)\[[0-9;]*m", '')
+                [Console]::Write($line + (' ' * [Math]::Max(0, $width - $visible.Length)))
+                [Console]::Write([Environment]::NewLine)
+            }
+        } catch { $script:DPDisplayReady = $false }
+    } elseif ($script:DPForceDisplay) {
+        foreach ($line in $lines) { Write-Host $line }
+    } else {
+        $previous = $ProgressPreference
+        $ProgressPreference = 'Continue'
+        try {
+            $status = if ([string]::IsNullOrWhiteSpace($Detail)) { $Stage } else { "$Stage - $Detail" }
+            Write-Progress -Activity 'DeskPilot installation' -Status $status -CurrentOperation "Elapsed $elapsed; remaining $remainingText" -PercentComplete ([Math]::Min(100, [Math]::Max(0, $Percent))) -Id 1
+        } finally { $ProgressPreference = $previous }
+    }
+}
+
+function Write-InstallProgress([string]$Stage, [string]$Detail, [int]$Percent, $Remaining) {
+    if ($null -eq $script:InstallProgressStart) { Initialize-InstallProgress }
+    Set-InstallStageState $Stage
+    Write-InstallDisplay -Stage $Stage -Detail $Detail -Percent $Percent -Remaining $Remaining -Summary ''
+}
+
+function Write-InstallStage([string]$Stage, [int]$Percent) {
+    Write-InstallProgress -Stage $Stage -Detail 'In progress' -Percent $Percent -Remaining $null
+}
+
+function Complete-InstallProgress([string]$Message) {
+    foreach ($name in $script:DPStages) { $script:DPStageState[$name] = 'done' }
+    $accent = Get-DeskPilotAccent
+    $reset = Get-DeskPilotReset
+    Write-InstallDisplay -Stage 'Complete' -Detail $Message -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${accent}SUCCESS$reset  $Message"
+    $script:InstallProgressCompleted = $true
+    if (-not $script:DPDisplayReady) {
+        $previous = $ProgressPreference
+        $ProgressPreference = 'Continue'
+        try { Write-Progress -Activity 'DeskPilot installation' -Id 1 -Completed } finally { $ProgressPreference = $previous }
+    }
+    $script:DPDisplayReady = $false
+    try { [Console]::CursorVisible = $true } catch { }
+    Write-Host "  $Message" -ForegroundColor Green
+}
+
+function Clear-InstallProgress {
+    if ($script:InstallProgressCompleted) { return }
+    $failure = if ([string]::IsNullOrWhiteSpace($script:InstallProgressFailure)) { 'Installation was not completed.' } else { $script:InstallProgressFailure }
+    $red = if ($script:DPAnsi) { "$([char]27)[38;2;255;120;120m" } else { '' }
+    $reset = Get-DeskPilotReset
+    Write-InstallDisplay -Stage 'Failed' -Detail $failure -Percent 100 -Remaining ([TimeSpan]::Zero) -Summary "  ${red}FAILED$reset  Installation failed: $failure"
+    $script:InstallProgressCompleted = $true
+    if (-not $script:DPDisplayReady) {
+        $previous = $ProgressPreference
+        $ProgressPreference = 'Continue'
+        try { Write-Progress -Activity 'DeskPilot installation' -Id 1 -Completed } finally { $ProgressPreference = $previous }
+    }
+    $script:DPDisplayReady = $false
+    try { [Console]::CursorVisible = $true } catch { }
+}
+
+function Invoke-ProgressiveDownload([string]$Url, [string]$Destination, [string]$Label, [int]$ProgressBase, [int]$ProgressSpan) {
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $response = $null
+    $target = $null
+    $source = $null
+    try {
+        $response = $client.GetAsync($Url, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $response.EnsureSuccessStatusCode() | Out-Null
+        $total = [double]$response.Content.Headers.ContentLength
+        if ($total -le 0) { $total = 0 }
+        $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $target = [IO.File]::Open($Destination, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $buffer = New-Object byte[] 1048576
+        $downloaded = [double]0
+        $started = [datetime]::Now
+        while (($read = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $target.Write($buffer, 0, $read)
+            $downloaded += $read
+            $estimate = Get-InstallTimeEstimate -Start $started -Completed $downloaded -Total $total
+            if ($total -gt 0) {
+                $fraction = [Math]::Min(1, $downloaded / $total)
+                $percent = [int]($ProgressBase + ($ProgressSpan * $fraction))
+                $detail = '{0}: {1:N1}/{2:N1} MB ({3:P0})' -f $Label, ($downloaded / 1MB), ($total / 1MB), $fraction
+            } else {
+                $percent = $ProgressBase
+                $detail = '{0}: {1:N1} MB' -f $Label, ($downloaded / 1MB)
+            }
+            Write-InstallProgress -Stage 'Downloading pinned releases' -Detail $detail -Percent $percent -Remaining $estimate.Remaining
+        }
+    } catch {
+        if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue }
+        throw
+    } finally {
+        if ($null -ne $target) { $target.Dispose() }
+        if ($null -ne $source) { $source.Dispose() }
+        if ($null -ne $response) { $response.Dispose() }
+        $client.Dispose()
+    }
+}
+
 function Get-CanonicalPath([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { throw 'A path is required.' }
     if (-not [IO.Path]::IsPathRooted($Path) -or $Path -match '\A[A-Za-z]:[^\\/]') { throw "An absolute fully qualified path is required: $Path" }
@@ -208,10 +462,14 @@ function Get-Checksum([string]$Text, [string]$FileName) {
     return $matches[0]
 }
 
-function Download-Verified([string]$Url, [string]$ExpectedHash, [string]$Destination) {
+function Download-Verified([string]$Url, [string]$ExpectedHash, [string]$Destination, [switch]$ShowProgress, [int]$ProgressBase = 0, [int]$ProgressSpan = 0) {
     if ($Url -notmatch '\Ahttps://') { throw 'Only HTTPS downloads are allowed.' }
     if ($ExpectedHash -notmatch '\A[0-9a-fA-F]{64}\z') { throw 'A full SHA-256 hash is required.' }
-    Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -ErrorAction Stop
+    if ($ShowProgress) {
+        Invoke-ProgressiveDownload -Url $Url -Destination $Destination -Label (Split-Path $Destination -Leaf) -ProgressBase $ProgressBase -ProgressSpan $ProgressSpan
+    } else {
+        Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -ErrorAction Stop
+    }
     if (-not (Test-Path -LiteralPath $Destination)) { throw "Download did not create '$Destination'." }
     $actual = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -cne $ExpectedHash.ToLowerInvariant()) {
@@ -220,19 +478,19 @@ function Download-Verified([string]$Url, [string]$ExpectedHash, [string]$Destina
     }
 }
 
-function Get-VerifiedReleaseArchive($Artifact, [string]$Destination) {
+function Get-VerifiedReleaseArchive($Artifact, [string]$Destination, [switch]$ShowProgress, [int]$ProgressBase = 0, [int]$ProgressSpan = 0) {
     $release = Get-GitHubRelease $Artifact.Repository $Artifact.Version
     $archiveAsset = Get-Asset $release $Artifact.Name
     if ($archiveAsset.browser_download_url -cne $Artifact.Url) { throw "Official metadata returned an unexpected URL for '$($Artifact.Name)'." }
     $sumsAsset = Get-Asset $release 'SHA256SUMS.txt'
     $sumsPath = Join-Path (Split-Path $Destination -Parent) ($Artifact.Key + '-SHA256SUMS.txt')
-    Download-Verified $sumsAsset.browser_download_url (Get-AssetSha256 $sumsAsset) $sumsPath
+    Download-Verified $sumsAsset.browser_download_url (Get-AssetSha256 $sumsAsset) $sumsPath -ShowProgress:$ShowProgress -ProgressBase $ProgressBase -ProgressSpan 1
     $sums = [IO.File]::ReadAllText($sumsPath)
     $checksumHash = Get-Checksum $sums $Artifact.Name
     $metadataHash = Get-AssetSha256 $archiveAsset
     if ($checksumHash -cne $metadataHash) { throw "Checksum manifest and release metadata disagree for '$($Artifact.Name)'." }
     if ($Artifact.Sha256 -and $checksumHash -cne $Artifact.Sha256) { throw "The pinned checksum for '$($Artifact.Name)' does not match the official release." }
-    Download-Verified $Artifact.Url $checksumHash $Destination
+    Download-Verified $Artifact.Url $checksumHash $Destination -ShowProgress:$ShowProgress -ProgressBase ($ProgressBase + 1) -ProgressSpan ($ProgressSpan - 1)
 }
 
 function Test-AuthenticodeSignature($Signature, [string]$PublisherPattern, [switch]$AllowUnsigned) {
@@ -328,7 +586,10 @@ function Expand-SafeZip(
     [string]$DestinationPath,
     [long]$MaxExpandedBytes = 2GB,
     [int]$MaxEntries = 100000,
-    [int]$MaxExpansionRatio = 200
+    [int]$MaxExpansionRatio = 200,
+    [switch]$ShowProgress,
+    [int]$ProgressBase = 0,
+    [int]$ProgressSpan = 0
 ) {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -346,7 +607,16 @@ function Expand-SafeZip(
             $totalExpanded = [long]0
             $totalCompressed = [long]0
             if ($archive.Entries.Count -eq 0 -or $archive.Entries.Count -gt $MaxEntries) { throw 'ZIP entry count exceeds the allowed limit or the archive is empty.' }
+            $entryCount = $archive.Entries.Count
+            $validateStart = [datetime]::Now
+            $entryIndex = 0
             foreach ($entry in $archive.Entries) {
+                $entryIndex++
+                if ($ShowProgress -and ($entryIndex % 250 -eq 0 -or $entryIndex -eq $entryCount)) {
+                    $estimate = Get-InstallTimeEstimate -Start $validateStart -Completed $entryIndex -Total $entryCount
+                    $percent = [int]($ProgressBase + (($ProgressSpan / 2) * ($entryIndex / [double]$entryCount)))
+                    Write-InstallProgress -Stage 'Validating archive' -Detail "$entryIndex of $entryCount entries checked" -Percent $percent -Remaining $estimate.Remaining
+                }
                 $name = [string]$entry.FullName
                 if ([string]::IsNullOrEmpty($name) -or $name.IndexOf([char]0) -ge 0 -or $name.IndexOf('`') -ge 0 -or $name.Contains('\') -or $name.IndexOf(':') -ge 0) {
                     throw "Unsafe ZIP entry path: $name"
@@ -407,7 +677,17 @@ function Expand-SafeZip(
             # No output exists until every central-directory entry has passed.
             New-Item -ItemType Directory -Path $destination -Force | Out-Null
             try {
+                $extractIndex = 0
+                $extractStart = [datetime]::Now
                 foreach ($plan in $plans) {
+                    $extractIndex++
+                    if ($ShowProgress -and ($extractIndex % 100 -eq 0 -or $extractIndex -eq $plans.Count)) {
+                        $script:DPFilesTotal = $plans.Count
+                        $script:DPFilesDone = $extractIndex
+                        $estimate = Get-InstallTimeEstimate -Start $extractStart -Completed $extractIndex -Total $plans.Count
+                        $percent = [int]($ProgressBase + ($ProgressSpan / 2) + (($ProgressSpan / 2) * ($extractIndex / [double]$plans.Count)))
+                        Write-InstallProgress -Stage 'Extracting archive' -Detail "$extractIndex of $($plans.Count) files written" -Percent $percent -Remaining $estimate.Remaining
+                    }
                     Assert-NoReparsePoint $plan.Target
                     if ($plan.IsDirectory) {
                         New-Item -ItemType Directory -Path $plan.Target -Force | Out-Null
@@ -562,7 +842,9 @@ function Update-TunnelProfile([string]$ExistingText, [string]$TunnelId, [string]
     if (-not (Test-TunnelId $TunnelId)) { throw 'The tunnel ID does not match the required service format.' }
     $node = Get-CanonicalPath $NodePath
     $install = Get-CanonicalPath $InstallRoot
-    $command = '"' + $node + '" "' + (Join-Path $install 'server\managed-launcher.mjs') + '"'
+    # tunnel-client v0.0.21 tokenizes mcp.command with a shell lexer that strips
+    # backslashes. Forward slashes are valid Windows paths and survive parsing.
+    $command = '"' + $node.Replace('\','/') + '" "' + (Join-Path $install 'server\managed-launcher.mjs').Replace('\','/') + '"'
     $yamlId = ConvertTo-Json -InputObject $TunnelId -Compress
     $yamlCommand = ConvertTo-Json -InputObject $command -Compress
     $basePath = New-DashboardBasePath
@@ -890,7 +1172,7 @@ function Test-WebView2Installed {
     return $false
 }
 
-function Ensure-WebView2([string]$BootstrapperPath) {
+function Ensure-WebView2([string]$BootstrapperPath, [switch]$ShowProgress) {
     if (Test-WebView2Installed) {
         return [pscustomobject]@{ Installed = $true; ExitCode = $null; RebootRequired = $false; Sha256 = $null }
     }
@@ -903,7 +1185,11 @@ function Ensure-WebView2([string]$BootstrapperPath) {
         # stable published SHA-256 pin. Its valid Microsoft Authenticode signature
         # is the publisher verification; the two hashes below detect local changes
         # between download, signature verification, and execution.
-        Invoke-WebRequest -Uri $url -OutFile $bootstrapper -UseBasicParsing -ErrorAction Stop
+        if ($ShowProgress) {
+            Invoke-ProgressiveDownload -Url $url -Destination $bootstrapper -Label 'MicrosoftEdgeWebView2Setup.exe' -ProgressBase 6 -ProgressSpan 9
+        } else {
+            Invoke-WebRequest -Uri $url -OutFile $bootstrapper -UseBasicParsing -ErrorAction Stop
+        }
         if (-not (Test-Path -LiteralPath $bootstrapper)) { throw 'The WebView2 bootstrapper download did not create a file.' }
         $downloadedHash = (Get-FileHash -LiteralPath $bootstrapper -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($downloadedHash -notmatch '\A[0-9a-f]{64}\z') { throw 'The WebView2 bootstrapper SHA-256 could not be computed.' }
@@ -960,6 +1246,8 @@ function Invoke-Installer {
     $createdDataRoot = $false
     $createdInstallParent = $false
     try {
+        Initialize-InstallProgress
+        Write-InstallStage 'Preparing' 1
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw 'LOCALAPPDATA is unavailable. Run this installer from a normal Windows user session.' }
         $local = Get-CanonicalPath $env:LOCALAPPDATA
@@ -1011,28 +1299,29 @@ function Invoke-Installer {
         New-Item -ItemType Directory -Path $tempBase -Force | Out-Null
         $workRoot = Join-Path $tempBase ('work-' + [Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $workRoot | Out-Null
-        $webView2 = Ensure-WebView2 -BootstrapperPath (Join-Path $workRoot 'MicrosoftEdgeWebView2Setup.exe')
+        Write-InstallStage 'Checking Microsoft Edge WebView2 Runtime' 5
+        $webView2 = Ensure-WebView2 -BootstrapperPath (Join-Path $workRoot 'MicrosoftEdgeWebView2Setup.exe') -ShowProgress
         if ($webView2.RebootRequired) { Write-Warning 'WebView2 was installed and requires a Windows restart to finish setup.' }
         $artifacts = Get-PinnedArtifacts
         $desk = $artifacts | Where-Object Key -eq 'DeskPilot' | Select-Object -First 1
         $tunnel = $artifacts | Where-Object Key -eq 'TunnelClient' | Select-Object -First 1
         $node = $artifacts | Where-Object Key -eq 'Node' | Select-Object -First 1
 
-        Write-Step 'Downloading pinned releases'
+        Write-InstallStage 'Downloading pinned releases' 15
         $deskZip = Join-Path $workRoot $desk.Name
         $tunnelZip = Join-Path $workRoot $tunnel.Name
         $nodeZip = Join-Path $workRoot $node.Name
-        Get-VerifiedReleaseArchive $desk $deskZip
-        Get-VerifiedReleaseArchive $tunnel $tunnelZip
-        Download-Verified $node.Url $node.Sha256 $nodeZip
+        Get-VerifiedReleaseArchive $desk $deskZip -ShowProgress -ProgressBase 16 -ProgressSpan 10
+        Get-VerifiedReleaseArchive $tunnel $tunnelZip -ShowProgress -ProgressBase 26 -ProgressSpan 10
+        Download-Verified $node.Url $node.Sha256 $nodeZip -ShowProgress -ProgressBase 36 -ProgressSpan 9
 
-        Write-Step 'Validating and extracting archives'
+        Write-InstallStage 'Validating and extracting archives' 46
         $appExtract = Join-Path $workRoot 'app-extract'
         $tunnelExtract = Join-Path $workRoot 'tunnel-extract'
         $nodeExtract = Join-Path $workRoot 'node-extract'
-        Expand-SafeZip -ArchivePath $deskZip -DestinationPath $appExtract
-        Expand-SafeZip -ArchivePath $tunnelZip -DestinationPath $tunnelExtract
-        Expand-SafeZip -ArchivePath $nodeZip -DestinationPath $nodeExtract
+        Expand-SafeZip -ArchivePath $deskZip -DestinationPath $appExtract -ShowProgress -ProgressBase 46 -ProgressSpan 7
+        Expand-SafeZip -ArchivePath $tunnelZip -DestinationPath $tunnelExtract -ShowProgress -ProgressBase 53 -ProgressSpan 7
+        Expand-SafeZip -ArchivePath $nodeZip -DestinationPath $nodeExtract -ShowProgress -ProgressBase 60 -ProgressSpan 5
 
         $deskExecutables = @(Get-ChildItem -LiteralPath $appExtract -Recurse -File -Filter 'DeskPilot.exe')
         if ($deskExecutables.Count -ne 1) { throw 'The verified DeskPilot archive must contain exactly one DeskPilot.exe.' }
@@ -1110,7 +1399,8 @@ function Invoke-Installer {
             $operations += [pscustomobject]@{ Target = (Join-Path $data 'launch-on-sign-in.txt'); Staged = $startupStage; Backup = (Join-Path $dataBackupRoot 'launch-on-sign-in.txt') }
         }
 
-        Write-Step 'Validating the staged installation'
+        Write-InstallStage 'Staging managed components' 66
+        Write-InstallStage 'Validating the staged installation' 72
         $validation = {
             param($Completed)
             # doctor validates the final absolute Node path and never starts the
@@ -1124,6 +1414,7 @@ function Invoke-Installer {
             Set-ShortcutAppUserModelId -ShortcutPath $shortcut
             if ($EnableStartup) { Set-StartupPreference -InstallRoot $install -Enabled }
         }
+        Write-InstallStage 'Committing installation' 85
         try {
             Invoke-PathTransaction -Operations $operations -Validation $validation -ValidateAfter 2 -AfterCommit $afterCommit -PreserveBackupFor $install -PreservedBackupPath $preservedBackup
         } catch {
@@ -1134,8 +1425,8 @@ function Invoke-Installer {
         Remove-SafePath $dataBackupRoot
         Remove-SafePath $appBackupRoot
 
-        Write-Host ''
-        Write-Host 'DeskPilot is installed.' -ForegroundColor Green
+        Write-InstallStage 'Finalizing' 96
+        Complete-InstallProgress 'DeskPilot is installed.'
         Write-Host 'The tunnel is not running. Start it manually in DeskPilot after entering a runtime API key with Tunnels Read and Use permissions.'
         Write-Host 'All five desktop permission categories remain unchanged (or disabled on first install).'
         if (Test-Path -LiteralPath $preservedBackup) { Write-Host "Previous installation backup: $preservedBackup" }
@@ -1143,8 +1434,12 @@ function Invoke-Installer {
             $appExecutable = Join-Path $install 'DeskPilot.exe'
             Start-Process -FilePath $appExecutable
         }
+    } catch {
+        $script:InstallProgressFailure = $_.Exception.Message
+        throw
     } finally {
         try {
+            if (-not $script:InstallProgressCompleted) { Clear-InstallProgress }
             if ($workRoot) { Remove-SafePath $workRoot }
             if ($createdTempBase -and $tempBase -and (Test-Path -LiteralPath $tempBase)) { Remove-SafePath $tempBase }
         } finally {
