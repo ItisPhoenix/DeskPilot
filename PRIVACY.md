@@ -48,7 +48,7 @@ The installer may contact:
 
 For WebView2, the installer verifies a valid Microsoft Corporation Authenticode signature, checks that the hash is unchanged before execution, installs silently, and verifies the Runtime in the registry. A setup failure aborts before the DeskPilot application swap.
 
-The release workflow generates `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the tunnel-client archive against its publisher checksum, and verifies the pinned Node.js checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js. DeskPilot and tunnel-client remain unsigned, so their checksums do not establish a code-signing publisher identity. These checks do not establish an OpenAI or Microsoft account entitlement.
+The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the tunnel-client archive against its publisher checksum, and verifies the pinned Node.js checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js. DeskPilot and tunnel-client remain unsigned, so their checksums do not establish a code-signing publisher identity. These checks do not establish an OpenAI or Microsoft account entitlement.
 
 ### Other network-capable features
 
@@ -81,9 +81,9 @@ DPAPI is at-rest protection, not a defense against same-user malware, a compromi
 
 ## Local dashboard
 
-The official tunnel-client admin dashboard binds to `127.0.0.1:8080` by default. The reviewed documentation describes limited `Origin`/`Referer` checks, but no documented built-in login or API-token authentication. Host-header validation and DNS-rebinding protection were not confirmed.
+The official tunnel-client admin dashboard binds to `127.0.0.1:18080` behind DeskPilot's loopback proxy and an installation-specific 144-bit random base path. The proxy listens on `127.0.0.1:8080`, allows only local `Host` values and routes under that base path, rejects cross-site unsafe browser actions, and verifies supervised upstream ownership before forwarding. This mitigates direct-browser bypass of the proxy and the upstream v0.0.21 read endpoints' missing independent `Host` validation. The dashboard still has no documented built-in login or API-token authentication.
 
-Do not enable remote UI, change the listener to a non-loopback address, reverse-proxy it, or forward port 8080. Treat the dashboard as an unauthenticated local operator surface.
+Do not enable remote UI, change either listener to a non-loopback address, reverse-proxy it, or forward port 8080 or 18080. Treat the dashboard as an unauthenticated local operator surface.
 
 ## Retention and deletion
 

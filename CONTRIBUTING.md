@@ -1,6 +1,6 @@
 # Contributing
 
-DeskPilot v1.0.0 is a private, source-first Windows project. Contributions must preserve the deny-by-default permission model, the strict foreground-lease rules, upstream attribution, and the approved DeskPilot dashboard/wordmark/DP monogram.
+DeskPilot v1.0.0 Beta is a public, source-first Windows project. Contributions must preserve the deny-by-default permission model, the strict foreground-lease rules, the Host-validating dashboard proxy, upstream attribution, and the approved DeskPilot dashboard/wordmark/DP monogram.
 
 ## Before you start
 
@@ -50,7 +50,7 @@ Do not weaken these behaviors without an explicit design and security review:
 - The runtime API key is restricted to Tunnels Read + Use and is removed before the MCP server starts.
 - The YAML profile never contains a literal API key.
 - Sign-in startup is opt-in and never starts the tunnel.
-- The tunnel-client dashboard stays on loopback; remote UI is not supported.
+- The tunnel-client dashboard stays behind DeskPilot's loopback Host-validating proxy; remote UI is not supported.
 - Managed upstream telemetry, remote feature flags, and feedback prompts stay disabled.
 - Managed tool history stays metadata-only in memory by default; detailed history requires `DESKPILOT_TOOL_HISTORY=1`, and argument logging requires `DESKPILOT_TOOL_CALL_LOG=1`.
 - The installer never launches DeskPilot by default; `-LaunchDeskPilot` remains explicit opt-in.
@@ -112,7 +112,7 @@ Report suspected vulnerabilities privately as described in [SECURITY.md](SECURIT
 
 ## Releases
 
-Only maintainers prepare releases. Follow [PUBLISH.md](PUBLISH.md) for version checks, clean Windows validation, exact versioned artifacts, checksums, private draft handling, public-only artifact attestations, and the unsigned Authenticode residual-risk warning. The private personal-account draft is checksummed but unattested. Do not promote a draft or claim release verification without candidate-specific evidence.
+Only maintainers prepare releases. Follow [PUBLISH.md](PUBLISH.md) for version checks, focused validation, exact versioned artifacts, checksums, manual Beta publication, and the unsigned Authenticode residual-risk warning. The manual Beta is checksummed but unattested. Do not claim release verification without candidate-specific evidence.
 
 ## Attribution
 

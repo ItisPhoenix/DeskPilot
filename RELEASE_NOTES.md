@@ -1,6 +1,6 @@
-# DeskPilot v1.0.0
+# DeskPilot v1.0.0 Beta
 
-DeskPilot is a Windows-first, source-available host for private desktop control through an OpenAI Secure MCP Tunnel. This release focuses on guided installation, default-deny permissions, local credential protection, and a reviewable source tree.
+DeskPilot is a Windows-first, source-available host for private desktop control through an OpenAI Secure MCP Tunnel. This Beta focuses on guided installation, default-deny permissions, local credential protection, a protected local dashboard, and a reviewable source tree.
 
 ## Highlights
 
@@ -10,24 +10,31 @@ DeskPilot is a Windows-first, source-available host for private desktop control 
 - Five permission categories disabled by default: Terminal, Files, Screen, Mouse, and Keyboard.
 - Files access requires an explicit workspace; DeskPilot policy, configuration, and installation paths are protected.
 - Strict foreground leases for mouse and keyboard input. Input never silently refocuses or retries uncertain delivery.
+- A loopback-only dashboard proxy with an exact `Host` allowlist, a 144-bit random base path, supervised upstream-ownership checks, and cross-site unsafe-action rejection, mitigating DNS-rebinding reads and direct-port bypass against tunnel-client v0.0.21.
 - Local dashboard restricted to loopback; server-side URL fetching and unsolicited browser downloads are disabled.
 - Upstream MIT attribution and third-party notices preserved in `NOTICE` and `UPSTREAM.md`.
 
 ## Installation
 
-Download `Install-DeskPilot-v1.0.0.ps1`, review it, and run it in Windows PowerShell. The installer obtains Node.js, the official OpenAI tunnel client, and Microsoft WebView2 Evergreen from verified official sources.
+Download `Install-DeskPilot-v1.0.0.ps1` and `SHA256SUMS.txt` from this release, review them, and verify both distribution files before running the installer in Windows PowerShell. The installer obtains Node.js, the official OpenAI tunnel client, and Microsoft WebView2 Evergreen from verified official sources.
 
 Full instructions, account eligibility, costs, limits, troubleshooting, and uninstall steps are in `README.md`.
+
+## Verification
+
+This Beta was validated and published manually, not through GitHub Actions. Automated suites, mock dashboard-proxy tests, dependency checks, installer/uninstaller checks, and archive smoke tests passed. Exact evidence is recorded in `docs/release-validation.md` and `CHANGELOG.md`.
+
+The following were **not verified** for this Beta and are not represented as passed:
+
+- Installation on a separate clean Windows machine or VM.
+- Real ChatGPT discovery and tool calls with an eligible workspace and live tunnel.
+- Physical emergency-hotkey, tray, Start/Stop, single-instance, close/reopen, and opt-in startup checks.
 
 ## Security limitations
 
 - DeskPilot is **not an OS-level sandbox**. Terminal permission can run arbitrary commands as the signed-in user.
 - Global Windows input injection is guarded by foreground, PID, process-incarnation, point, and lease checks, but it is not atomic HWND-targeted delivery.
-- The tunnel client's local dashboard has no documented built-in login in v0.0.21. Keep it loopback-only; do not enable remote UI.
-- Host-header/DNS-rebinding defenses inside the external tunnel client are not confirmed by its official documentation.
-- DeskPilot artifacts are SHA-256 checksummed but are not Authenticode-signed by DeskPilot. GitHub-native attestation is unavailable in this private personal repository; the release workflow enables it only after the repository is public or on GitHub Enterprise Cloud.
+- The tunnel client's local dashboard has no documented built-in login in v0.0.21. DeskPilot's proxy enforces loopback Host values and blocks cross-site unsafe actions, but the dashboard remains an unauthenticated local operator surface.
+- DeskPilot artifacts are SHA-256 checksummed but are not Authenticode-signed. This manual Beta has no GitHub artifact attestation.
+- Custom TLS trust, outbound proxies, and Cloudflare process selectors are scrubbed from the managed launch. Corporate TLS-inspecting proxies are not supported in this Beta.
 - Custom tunnel eligibility and pricing depend on OpenAI/workspace policy. Pro tunnel support is not explicitly confirmed; Free/Plus support is not documented.
-
-## Verification
-
-Validation for this draft was performed locally and manually, not through GitHub Actions. Exact commands, results, artifact digests, skips, and remaining limitations are recorded in `docs/release-validation.md`, `CHANGELOG.md`, and `SECURITY.md`. This draft is not a public release.

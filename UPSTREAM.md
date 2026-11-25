@@ -25,7 +25,7 @@ DeskPilot v1.0.0 adds or changes:
 - A supervised official OpenAI tunnel-client process using the full Windows amd64 client.
 - Restricted runtime-key handling with optional Windows DPAPI storage and credential-variable removal before the MCP server starts.
 - Per-user installation, manual tunnel start/stop, and opt-in sign-in startup.
-- Windows-focused source builds, exact versioned release artifacts, private draft releases, checksums, and public-only artifact attestation support. Private personal-account drafts remain unattested.
+- Windows-focused source builds, exact versioned release artifacts, manual public Beta releases, checksums, and optional public-repository artifact attestation support. Manual releases remain unattested unless a separate attested workflow is run and verified.
 - Metadata-only in-memory managed tool history by default, with detailed history and argument logging behind explicit environment-variable opt-ins.
 - Managed runtime settings that disable inherited upstream telemetry, remote feature-flag fetching, and feedback prompts.
 - Local state, privacy, security, troubleshooting, uninstall, and release documentation for the Windows host model.

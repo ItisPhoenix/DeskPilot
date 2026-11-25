@@ -433,6 +433,80 @@ function Find-YamlChildLine([string[]]$Lines, [string]$ParentKey, [string]$Child
     throw "The existing profile is missing '$ParentKey.$ChildKey'."
 }
 
+function Set-YamlChildValue([System.Collections.Generic.List[string]]$Lines, [string]$ParentKey, [string]$ChildKey, [string]$JsonValue) {
+    $parent = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match ('\A' + [regex]::Escape($ParentKey) + '\s*:\s*(?:#.*)?\z')) { $parent = $i; break }
+    }
+    if ($parent -lt 0) {
+        $Lines.Add($ParentKey + ':')
+        $parent = $Lines.Count - 1
+    }
+    $end = $Lines.Count
+    for ($i = $parent + 1; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
+    }
+    $childIndent = 2
+    for ($i = $parent + 1; $i -lt $end; $i++) {
+        if ($Lines[$i] -match '^(\s+)\S' -and $Lines[$i] -notmatch '^\s*#') {
+            $childIndent = $Matches[1].Length
+            break
+        }
+    }
+    for ($i = $parent + 1; $i -lt $end; $i++) {
+        if ($Lines[$i] -match ('^\s+' + [regex]::Escape($ChildKey) + '\s*:')) {
+            $Lines[$i] = Set-YamlScalar $Lines[$i] $JsonValue
+            return
+        }
+    }
+    $Lines.Insert($end, (' ' * $childIndent) + $ChildKey + ': ' + $JsonValue)
+}
+
+function New-DashboardBasePath {
+    $bytes = New-Object byte[] 18
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $token = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    return '/deskpilot-' + $token
+}
+
+function Remove-YamlChildValue([System.Collections.Generic.List[string]]$Lines, [string]$ParentKey, [string]$ChildKey) {
+    $parent = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match ('\A' + [regex]::Escape($ParentKey) + '\s*:\s*(?:#.*)?\z')) { $parent = $i; break }
+    }
+    if ($parent -lt 0) { return }
+    $end = $Lines.Count
+    for ($i = $parent + 1; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
+    }
+    for ($i = $parent + 1; $i -lt $end; $i++) {
+        if ($Lines[$i] -match ('^\s+' + [regex]::Escape($ChildKey) + '\s*:')) {
+            $Lines.RemoveAt($i)
+            return
+        }
+    }
+}
+
+function Remove-YamlSection([System.Collections.Generic.List[string]]$Lines, [string]$SectionKey) {
+    $start = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match ('\A' + [regex]::Escape($SectionKey) + '\s*:\s*(?:#.*)?\z')) { $start = $i; break }
+    }
+    if ($start -lt 0) { return }
+    $end = $Lines.Count
+    for ($i = $start + 1; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^\S' -and $Lines[$i] -notmatch '^\s*#') { $end = $i; break }
+    }
+    $Lines.RemoveRange($start, $end - $start)
+}
+
+function Remove-YamlScalarKey([System.Collections.Generic.List[string]]$Lines, [string]$Key) {
+    for ($i = $Lines.Count - 1; $i -ge 0; $i--) {
+        if ($Lines[$i] -match ('^\s*' + [regex]::Escape($Key) + '\s*:')) { $Lines.RemoveAt($i) }
+    }
+}
+
 function Update-TunnelProfile([string]$ExistingText, [string]$TunnelId, [string]$NodePath, [string]$InstallRoot) {
     if (-not (Test-TunnelId $TunnelId)) { throw 'The tunnel ID does not match the required service format.' }
     $node = Get-CanonicalPath $NodePath
@@ -440,6 +514,8 @@ function Update-TunnelProfile([string]$ExistingText, [string]$TunnelId, [string]
     $command = '"' + $node + '" "' + (Join-Path $install 'server\managed-launcher.mjs') + '"'
     $yamlId = ConvertTo-Json -InputObject $TunnelId -Compress
     $yamlCommand = ConvertTo-Json -InputObject $command -Compress
+    $basePath = New-DashboardBasePath
+    $yamlBasePath = ConvertTo-Json -InputObject $basePath -Compress
     if ([string]::IsNullOrWhiteSpace($ExistingText)) {
         return @"
 config_version: 1
@@ -448,9 +524,11 @@ control_plane:
   tunnel_id: $yamlId
   api_key: "env:CONTROL_PLANE_API_KEY"
 health:
-  listen_addr: "127.0.0.1:8080"
+  listen_addr: "127.0.0.1:18080"
 admin_ui:
+  allow_remote: false
   open_browser: false
+  base_path: $yamlBasePath
 log:
   level: info
   format: json
@@ -467,6 +545,20 @@ mcp:
     if ($hadFinalNewline -and $rawLines.Count -gt 0 -and $rawLines[-1] -ceq '') { $rawLines = @($rawLines[0..($rawLines.Count - 2)]) }
     $lines = [System.Collections.Generic.List[string]]::new()
     foreach ($line in $rawLines) { $lines.Add($line) }
+    Remove-YamlSection $lines 'cloudflared'
+    Remove-YamlScalarKey $lines 'ca_bundle'
+    Remove-YamlScalarKey $lines 'http_proxy'
+    Remove-YamlChildValue $lines 'control_plane' 'url_path'
+    Remove-YamlChildValue $lines 'control_plane' 'residency'
+    Remove-YamlChildValue $lines 'health' 'unix_socket'
+    Remove-YamlChildValue $lines 'health' 'url_file'
+    Remove-YamlChildValue $lines 'admin_ui' 'public_origin'
+    Set-YamlChildValue $lines 'control_plane' 'base_url' '"https://api.openai.com"'
+    Set-YamlChildValue $lines 'control_plane' 'api_key' '"env:CONTROL_PLANE_API_KEY"'
+    Set-YamlChildValue $lines 'health' 'listen_addr' '"127.0.0.1:18080"'
+    Set-YamlChildValue $lines 'admin_ui' 'allow_remote' 'false'
+    Set-YamlChildValue $lines 'admin_ui' 'open_browser' 'false'
+    Set-YamlChildValue $lines 'admin_ui' 'base_path' $yamlBasePath
     $idIndex = Find-YamlChildLine $lines.ToArray() 'control_plane' 'tunnel_id'
     $lines[$idIndex] = Set-YamlScalar $lines[$idIndex] $yamlId
 

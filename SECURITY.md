@@ -2,11 +2,11 @@
 
 ## Supported version
 
-Security fixes target the latest DeskPilot release and the current default branch. DeskPilot v1.0.0 is a private, source-first Windows release.
+Security fixes target the latest DeskPilot release and the current default branch. DeskPilot v1.0.0 Beta is a public, source-first Windows pre-release.
 
 ## Report a vulnerability
 
-Use GitHub's private vulnerability reporting when it is available for the repository. If it is not available, contact the maintainer through the private channel used to distribute DeskPilot. Do not open a public issue containing exploit details, credentials, personal data, or sensitive logs.
+Use GitHub's private vulnerability reporting on the repository. If it is unavailable, open a minimal public issue asking for a private contact channel; do not include exploit details, credentials, personal data, or sensitive logs.
 
 Include:
 
@@ -73,9 +73,9 @@ Platform tunnel permissions and ChatGPT custom MCP access are separate. Workspac
 
 ### Local dashboard
 
-The tunnel-client admin dashboard is loopback-only by default at `http://127.0.0.1:8080/ui`. The reviewed v0.0.21 material describes limited `Origin`/`Referer` checks. It does not document a built-in dashboard login or API-token authentication, and Host-header validation and DNS-rebinding protection were not confirmed.
+The tunnel-client admin dashboard is reached through DeskPilot's loopback proxy at an installation-specific `http://127.0.0.1:8080/<random>/ui` URL; the upstream listener is restricted to `127.0.0.1:18080` behind the same 144-bit random base path. The proxy enforces an exact loopback `Host` allowlist, rejects routes outside that base path, and rejects cross-site unsafe browser actions. It verifies supervised upstream ownership before forwarding and stops on ownership loss. This mitigates direct-browser bypass of the proxy and the upstream v0.0.21 read endpoints' lack of independent `Host` validation. The installer enforces `allow_remote: false` and rewrites upgraded profiles.
 
-Treat the dashboard as an unauthenticated local operator surface. Never enable remote UI, bind it to a non-loopback address, reverse-proxy it, or forward port 8080.
+The dashboard still has no documented built-in login or API-token authentication. Treat it as an unauthenticated local operator surface. Never enable remote UI, bind either dashboard port to a non-loopback address, reverse-proxy it, or forward port 8080 or 18080.
 
 ### Process lifecycle
 
@@ -95,11 +95,11 @@ See [PRIVACY.md](PRIVACY.md) for local paths, network behavior, retention, and d
 
 ## Supply chain and unsigned binaries
 
-The release workflow generates `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the full official `tunnel-client-v0.0.21-windows-amd64.zip` against its publisher checksum, and verifies pinned Node.js **v24.22.3** against its official checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js.
+The manual release publishes `SHA256SUMS.txt` for `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1`; users should verify both before installation. The installer verifies the DeskPilot archive against that manifest, verifies the full official `tunnel-client-v0.0.21-windows-amd64.zip` against its publisher checksum, and verifies pinned Node.js **v24.22.3** against its official checksum. It requires a valid OpenJS Foundation Authenticode signature for Node.js.
 
 When WebView2 is missing, the installer downloads the bootstrapper from Microsoft's official fwlink, requires a valid Microsoft Corporation Authenticode signature, checks hash stability before execution, installs silently, and verifies the Runtime in the registry. Failure aborts before the DeskPilot application swap.
 
-DeskPilot v1.0.0 executables are **not signed with Authenticode**. The private personal-account draft is checksummed but **unattested**: GitHub Artifact Attestations require a public repository or GitHub Enterprise Cloud, and the workflow enables attestation only for public visibility. Checksums can detect changes only when the expected digest comes from a trusted channel; they do not identify a signed publisher, provide independent build provenance, or remove SmartScreen warnings. A compromised repository, release account, or distribution channel can still substitute both artifacts and checksums. Follow [PUBLISH.md](PUBLISH.md); do not disable operating-system security warnings to bypass verification.
+DeskPilot v1.0.0 Beta executables are **not signed with Authenticode**. The manual release is checksummed but **unattested** because it was published without GitHub Actions. Checksums can detect changes only when the expected digest comes from a trusted channel; they do not identify a signed publisher, provide independent build provenance, or remove SmartScreen warnings. A compromised repository or release account can still substitute both artifacts and checksums. Follow [PUBLISH.md](PUBLISH.md); do not disable operating-system security warnings to bypass verification.
 
 ## Known limitations
 
@@ -111,7 +111,8 @@ DeskPilot v1.0.0 executables are **not signed with Authenticode**. The private p
 - DPAPI does not protect secrets from an attacker already running as the user.
 - The tunnel carries tool data through OpenAI and does not hide it from the connected services.
 - Unsigned DeskPilot binaries leave residual publisher-identity and tampering risk.
-- The private personal-account draft has checksums but no GitHub artifact attestation, so it lacks independent build provenance.
+- The manual Beta release has checksums but no GitHub artifact attestation, so it lacks independent build provenance.
+- Clean-VM installation, live ChatGPT connectivity, and physical desktop controls were not verified for this Beta.
 
 For workloads requiring hard isolation, use a separately managed virtual machine or dedicated workstation. DeskPilot does not create or claim that isolation.
 

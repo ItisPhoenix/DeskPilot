@@ -2,7 +2,7 @@
 
 **Windows-first desktop control for ChatGPT, using the official OpenAI tunnel client.**
 
-DeskPilot v1.0.0 is a source-first Windows MCP host. It lets a trusted ChatGPT session invoke explicitly enabled tools for terminal processes, files, screen capture, mouse input, and keyboard input on your desktop.
+DeskPilot v1.0.0 Beta is a source-first Windows MCP host. It lets a trusted ChatGPT session invoke explicitly enabled tools for terminal processes, files, screen capture, mouse input, and keyboard input on your desktop. This Beta has automated and mock-service validation; clean-VM installation, live ChatGPT, and physical desktop acceptance remain unverified as documented in [docs/release-validation.md](docs/release-validation.md).
 
 DeskPilot is derived from [Desktop Commander](https://github.com/wonderwhy-er/DesktopCommanderMCP). The upstream MIT license and attribution are retained in [LICENSE](LICENSE), [NOTICE](NOTICE), and [UPSTREAM.md](UPSTREAM.md).
 
@@ -87,23 +87,23 @@ flowchart LR
     ML -->|"Scrubbed environment<br/>Local permission policy"| M["TypeScript MCP server"]
     M --> P["Five-category permission gate"]
     P --> W["Windows processes, files,<br/>screen, mouse, and keyboard"]
-    L -.->|"Loopback readiness probes"| TC
-    TC --> D["Local admin UI<br/>127.0.0.1:8080/ui"]
+    L -.->|"Loopback readiness probes"| DP["DeskPilot dashboard proxy<br/>127.0.0.1:8080"]
+    B["Local browser"] --> DP
+    DP -->|"Host-validated forwarding"| TC
+    TC --> U["Internal tunnel admin UI<br/>127.0.0.1:18080/&lt;random&gt;/ui"]
 ```
 
 The tunnel transport needs no inbound firewall port. `tunnel-client` polls OpenAI over outbound HTTPS, forwards MCP requests to DeskPilot's local stdio server, and returns results through the same tunnel. OpenAI and the connected ChatGPT workspace are part of the data path; the tunnel does not make tool traffic private from them.
 
 ## Install on Windows
 
-DeskPilot v1.0.0 is reviewed through a private source repository and draft GitHub Release. The approved artifacts are:
+DeskPilot v1.0.0 Beta is distributed as a public GitHub pre-release. The release assets are:
 
 - `DeskPilot-v1.0.0-windows-x64.zip`
 - `Install-DeskPilot-v1.0.0.ps1`
 - `SHA256SUMS.txt`
 
-For this draft, automatic GitHub Actions triggers are disabled. Validation is performed locally and manually, with evidence recorded in [docs/release-validation.md](docs/release-validation.md). No GitHub Actions pass is claimed for v1.0.0.
-
-The installer uses the approved stable, non-draft `v1.0.0` assets after promotion within the private repository. Obtain the artifacts and expected checksums from the maintainer through the approved private channel. Do not use unofficial mirrors.
+Download them only from the [official v1.0.0 Beta release](https://github.com/ItisPhoenix/DeskPilot/releases/tag/v1.0.0). Automatic GitHub Actions triggers are disabled; this Beta was validated and published manually. Exact evidence and unverified real-world checks are recorded in [docs/release-validation.md](docs/release-validation.md). No GitHub Actions pass is claimed.
 
 Before running the installer, compare both file hashes with `SHA256SUMS.txt`:
 
@@ -299,11 +299,11 @@ Official references:
 DeskPilot has two separate local interfaces:
 
 - The native DeskPilot control window manages credentials, permissions, startup, and tunnel start/stop.
-- The official tunnel-client admin dashboard is available at `http://127.0.0.1:8080/ui` while the client is running.
+- The official tunnel-client admin dashboard is available through DeskPilot's proxy while the client is running. Use the native **Local dashboard** button; it opens the installation's randomized URL at `http://127.0.0.1:8080/<random>/ui`. The upstream dashboard listens only on `127.0.0.1:18080` behind the same random base path.
 
-The tunnel-client dashboard is **loopback-only by default**. The reviewed v0.0.21 material describes limited `Origin`/`Referer` checks for browser actions, but does not document a built-in login or API-token authentication for the dashboard. Host-header validation and DNS-rebinding protection were **not confirmed**. Treat the dashboard as an unauthenticated local operator surface.
+DeskPilot's proxy accepts only loopback `Host` values (`127.0.0.1:8080` or `localhost:8080`), rejects requests outside the randomized base path, and rejects cross-site unsafe browser actions before forwarding. The installer generates a fresh 144-bit random base path on every install or repair, removes Cloudflare/CA/proxy overrides, and rewrites older profiles to the protected listener. The launcher verifies the supervised tunnel still owns the upstream port before forwarding and stops both processes if ownership is lost.
 
-**Never enable remote UI, bind port 8080 to a non-loopback address, reverse-proxy it, or forward it to your LAN or the public internet.** Loopback reduces network exposure; it does not authenticate local processes or eliminate browser-based attacks.
+The dashboard still has no documented built-in login or API-token authentication. Treat it as an unauthenticated local operator surface. **Never enable remote UI, bind either dashboard port to a non-loopback address, reverse-proxy it, or forward it to your LAN or the public internet.** Loopback, Host validation, and a random path do not authenticate local processes.
 
 ## Security model and limitations
 
@@ -317,7 +317,8 @@ DeskPilot's controls reduce accidental exposure. They do not contain a malicious
 - **DPAPI is account-bound at-rest protection.** It does not protect secrets from same-user malware or an administrator.
 - **The tunnel is a transport, not privacy from OpenAI.** Tool arguments, results, screenshots, and normal app-level logs can pass through or be retained by the connected services under their policies.
 - **Process supervision is lifecycle control.** The Windows Job Object stops the launched tunnel process tree when DeskPilot exits; it is not a security sandbox.
-- **v1.0.0 binaries are unsigned.** The private personal-account draft is checksummed but has no GitHub artifact attestation because GitHub Artifact Attestations require a public repository or GitHub Enterprise Cloud. Checksums are not Authenticode code signing or independent build provenance. See [PUBLISH.md](PUBLISH.md).
+- **v1.0.0 Beta binaries are unsigned.** The manual release is checksummed but unattested; no GitHub Actions artifact attestation was generated. Checksums are not Authenticode code signing or independent build provenance. See [PUBLISH.md](PUBLISH.md).
+- **Custom TLS trust and outbound proxies are ignored.** The managed launch scrubs CA-bundle, proxy, Cloudflare, and credential-related overrides to keep the runtime key on the official control-plane path. Corporate TLS-inspecting proxies are not supported in this Beta.
 
 For hard isolation, use a separately managed virtual machine or dedicated workstation outside DeskPilot. DeskPilot does not create or claim that isolation.
 
@@ -327,9 +328,9 @@ See [SECURITY.md](SECURITY.md) for the full security policy and private reportin
 
 | Symptom | Checks and action |
 |---|---|
-| Installer cannot download a release or dependency | Confirm approved private-release access, DNS, proxy settings, and outbound HTTPS. Verify the expected asset and checksum. Do not bypass a checksum or signature failure. |
+| Installer cannot download a release or dependency | Confirm access to the official GitHub release, DNS, proxy settings, and outbound HTTPS. Verify the expected asset and checksum. Do not bypass a checksum or signature failure. |
 | WebView2 setup or initialization fails | The installer aborts before swapping the app if download, Microsoft signature verification, hash-stability, silent setup, or registry verification fails. Check the official fwlink, device policy, and administrator approval, then rerun the installer. |
-| Port 8080 is already occupied | Stop the other tunnel client or local service using that port. DeskPilot refuses to treat an unrecognized listener as its dashboard. Do not expose the port. |
+| Port 8080 or 18080 is already occupied | Stop the other tunnel client or local service using that port. DeskPilot refuses to treat an unrecognized listener as its dashboard proxy or upstream. Do not expose either port. |
 | Runtime key returns 403 | Use a restricted key, confirm its principal has Tunnels Read + Use for the target tunnel, select the correct organization, and allow up to 30 minutes for role propagation. Do not substitute an admin key. |
 | Tunnel does not appear in ChatGPT | Confirm Business or Enterprise/Edu web access, workspace association, custom MCP app permissions, RBAC/Lockdown, and Tunnels Read + Use. Pro tunnel eligibility is not explicitly confirmed; Free/Plus availability is not documented. |
 | `doctor` passes but ChatGPT fails | Treat `doctor` as local preflight only. Check workspace policy, tunnel association, plan eligibility, live client readiness, discovery, and tool confirmation settings. |
@@ -338,7 +339,7 @@ See [SECURITY.md](SECURITY.md) for the full security policy and private reportin
 | Permissions are unexpectedly disabled | A missing or invalid `permissions.txt` fails closed. Review the file locally while DeskPilot is stopped; do not let an untrusted prompt re-enable categories. |
 | Startup is enabled but the tunnel is offline | This is expected. Sign-in startup opens only the tray app. Start the tunnel manually. |
 | PDF generation cannot find Chrome | Install a supported system Chrome yourself. DeskPilot does not provision a browser. |
-| Windows reports an unsigned executable | Verify `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1` against `SHA256SUMS.txt` obtained through the approved private channel. The private personal-account draft has no GitHub artifact attestation. v1.0.0 does not apply an Authenticode signature; do not disable SmartScreen as a workaround. |
+| Windows reports an unsigned executable | Verify `DeskPilot-v1.0.0-windows-x64.zip` and `Install-DeskPilot-v1.0.0.ps1` against `SHA256SUMS.txt` from the official release. The manual Beta has no GitHub artifact attestation. v1.0.0 does not apply an Authenticode signature; do not disable SmartScreen as a workaround. |
 
 **Emergency stop:** press `Ctrl+Alt+Shift+F12`, use **Emergency stop** in DeskPilot, or choose **Exit DeskPilot** from the tray. This stops the supervised tunnel process. It does not undo commands, file changes, or input already delivered.
 
@@ -406,9 +407,12 @@ Run the checks appropriate to your change and record the actual results. These c
 ```powershell
 npm run test:ci
 cargo fmt --manifest-path launcher/Cargo.toml --all -- --check
-cargo check --manifest-path launcher/Cargo.toml --bin deskpilot
-cargo build --release --manifest-path launcher/Cargo.toml --bin deskpilot
+cargo check --locked --manifest-path launcher/Cargo.toml --bin deskpilot
+cargo clippy --locked --manifest-path launcher/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --manifest-path launcher/Cargo.toml
+cargo build --release --locked --manifest-path launcher/Cargo.toml --bin deskpilot
 .\launcher\target\release\deskpilot.exe --self-test
+powershell -ExecutionPolicy Bypass -File .\test\deskpilot-installer-security.test.ps1
 ```
 
 Interactive desktop checks can capture the screen and send real input. Run them only in an isolated, consented Windows session. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow and release gates.

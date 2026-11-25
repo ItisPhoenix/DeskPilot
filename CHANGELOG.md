@@ -4,9 +4,9 @@ All notable changes to DeskPilot are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and DeskPilot follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-11-25
+## [1.0.0 Beta] - 2026-11-25
 
-Initial source-first Windows release.
+Initial public source-first Windows pre-release.
 
 ### Added
 
@@ -26,7 +26,7 @@ Initial source-first Windows release.
 
 ### Changed
 
-- Distribution is a private source repository and draft Windows x64 GitHub Release with exact versioned artifacts and checksums. The private personal-account draft is unattested because GitHub Artifact Attestations require a public repository or GitHub Enterprise Cloud; the workflow enables attestation only for public visibility.
+- Distribution is a public source repository and manual v1.0.0 Beta GitHub pre-release with exact versioned artifacts and checksums. The manual Beta is unattested because no GitHub Actions artifact attestation was generated.
 - The supported connection path is ChatGPT web through the full official `tunnel-client-v0.0.21-windows-amd64.zip` asset and an outbound HTTPS Secure MCP Tunnel.
 - Runtime configuration is stored under `%LOCALAPPDATA%\DeskPilot`. Managed tool history is metadata-only in memory by default, and detailed history/argument logs require explicit opt-in.
 - Sign-in startup is opt-in and never starts the tunnel automatically.
@@ -39,9 +39,10 @@ Initial source-first Windows release.
 - MCP filesystem tools cannot access DeskPilot's configuration/install trees or permission-policy file.
 - Server-side URL reads are disabled, and remote MCP callers cannot change server configuration.
 - The runtime API key is limited to Tunnels Read + Use and is not forwarded to the MCP server environment.
-- The tunnel-client admin dashboard remains loopback-only; remote UI is unsupported.
+- Added a DeskPilot-owned loopback dashboard proxy with an exact `Host` allowlist and cross-site unsafe-action rejection, mitigating DNS-rebinding reads against tunnel-client v0.0.21's unguarded read endpoints.
+- The upstream dashboard is restricted to `127.0.0.1:18080`; the proxy listens on `127.0.0.1:8080`, and remote UI remains unsupported.
 - Documented that DeskPilot is not an OS-level sandbox and that terminal access can bypass file-workspace and command-blocklist controls.
-- Documented that v1.0.0 binaries are unsigned and retain Authenticode publisher-identity and tampering risk. The private personal-account draft has checksums but no GitHub artifact attestation or independent build provenance.
+- Documented that v1.0.0 Beta binaries are unsigned and retain Authenticode publisher-identity and tampering risk. The manual Beta has checksums but no GitHub artifact attestation or independent build provenance.
 
 ### Known limitations
 
@@ -49,10 +50,11 @@ Initial source-first Windows release.
 - Workspace roles, RBAC, Lockdown, and tunnel associations apply; role propagation can take up to 30 minutes.
 - Reviewed official sources do not establish tunnel-specific pricing; normal ChatGPT/API charges are separate.
 - Foreground checks cannot make Windows input atomic or target-bound.
-- The local dashboard has no documented built-in login/API-token authentication; Host-header and DNS-rebinding protections were not confirmed.
+- The local dashboard has no documented built-in login/API-token authentication. DeskPilot's proxy validates local Host values, but local processes remain outside the security boundary.
 - `doctor --profile-file <yaml> --explain` is local preflight, not proof of ChatGPT authorization.
-- The private personal-account draft cannot use GitHub Artifact Attestations and therefore lacks independent build provenance despite checksum verification.
+- Clean-VM installation, real ChatGPT connectivity, and physical desktop controls were not verified for this Beta.
+- The manual Beta lacks GitHub artifact attestation and therefore lacks independent build provenance despite checksum verification.
 
 ### Verification status
 
-Validation was performed locally and manually, not through GitHub Actions. The main suite passed 202/202 tests with 13 reported environment skips; repro passed 16/16; integration passed 3/3. Clean dependency installation, TypeScript and pinned Node 24.22.3 builds, Rust formatting/lint/tests/release build/self-test, installer/uninstaller security suites, managed-runtime checks, isolated desktop input, secret scans, dependency audits, and archive layout smoke checks passed. Exact evidence and unverified clean-machine/live-tunnel items are recorded in [docs/release-validation.md](docs/release-validation.md). The candidate remains a private draft pending owner review.
+Validation was performed locally and manually, not through GitHub Actions. The main suite passed 202/202 tests with 13 reported environment skips; repro passed 16/16; integration passed 3/3. Rust passed 39 tests, including live mock dashboard-proxy rebinding rejection, random-route enforcement, upstream-ownership gating, SSE streaming, and environment-override blocking; the installer security suite passed 203 checks. Clean dependency installation, TypeScript and pinned Node 24.22.3 builds, Rust formatting/lint/release build/self-test, uninstaller security checks, managed-runtime checks, isolated desktop input, secret scans, dependency audits, and archive layout smoke checks passed. Exact evidence and unverified clean-VM/live-ChatGPT/physical items are recorded in [docs/release-validation.md](docs/release-validation.md).

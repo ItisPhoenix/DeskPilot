@@ -1,5 +1,7 @@
 #![windows_subsystem = "windows"]
 include!("../core.inc.rs");
+#[path = "../dashboard_proxy.rs"]
+mod dashboard_proxy;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use raw_window_handle::{
     HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
@@ -9,6 +11,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
     num::NonZeroIsize,
+    sync::Arc,
 };
 use wry::{
     dpi::{PhysicalPosition, PhysicalSize},
@@ -168,13 +171,15 @@ impl Modern {
         match port_busy() {
             Ok(true) => {
                 self.external = true;
-                self.fail("Another process owns port 8080. Stop it before starting here.");
+                self.fail("Another process owns a protected dashboard port. Stop it before starting here.");
                 return;
             }
             Ok(false) => {}
             Err(error) => {
                 self.external = true;
-                self.fail(&format!("Could not verify port 8080 ownership: {error}"));
+                self.fail(&format!(
+                    "Could not verify protected dashboard port ownership: {error}"
+                ));
                 return;
             }
         }
@@ -221,6 +226,16 @@ impl Modern {
             self.fail("The tunnel profile does not use DeskPilot's exact packaged Node runtime. Repair the installation.");
             return;
         }
+        if !profile_uses_trusted_dashboard(&profile_text) {
+            self.fail("The tunnel profile does not use DeskPilot's protected loopback dashboard. Repair the installation.");
+            return;
+        }
+        if !profile_uses_trusted_control_plane(&profile_text) {
+            self.fail("The tunnel profile does not use the official OpenAI control plane and managed runtime-key reference. Repair the installation.");
+            return;
+        }
+        let dashboard_path = profile_dashboard_base_path(&profile_text)
+            .expect("trusted dashboard profile must contain a base path");
 
         if key.trim().is_empty() {
             match fs::read(keyfile())
@@ -259,7 +274,12 @@ impl Modern {
             return;
         }
 
-        let args = format!("run --profile-file \"{}\"", profile.display());
+        let args = format!(
+            "run --profile-file \"{}\" --control-plane.base-url=https://api.openai.com --control-plane.url-path= --health.listen-addr={} --health.unix-socket= --allow-remote-ui=false --open-web-ui=false --admin-ui.base-path={} --admin-ui.public-origin= --cloudflared.managed=false",
+            profile.display(),
+            dashboard_proxy::UPSTREAM_ADDR,
+            dashboard_path
+        );
         let r = launch(
             tunnel_client.path.to_string_lossy().as_ref(),
             &args,
@@ -270,10 +290,29 @@ impl Modern {
             key.as_mut_vec().fill(0);
         }
         match r {
-            Ok(r) => {
-                self.run = Some(r);
-                self.ready = false;
-                self.status("Connecting to your private tunnel…");
+            Ok(mut running) => {
+                let upstream_pid = running.pid;
+                let validator = Arc::new(move || {
+                    listener_owners(dashboard_proxy::UPSTREAM_PORT)
+                        .map(|listeners| listeners_are_owned_by(&listeners, upstream_pid))
+                        .unwrap_or(false)
+                });
+                match dashboard_proxy::DashboardProxy::start(
+                    dashboard_proxy::PUBLIC_ADDR.parse().unwrap(),
+                    dashboard_proxy::UPSTREAM_ADDR.parse().unwrap(),
+                    &dashboard_path,
+                    validator,
+                ) {
+                    Ok(proxy) => {
+                        running.dashboard = Some(proxy);
+                        self.run = Some(running);
+                        self.ready = false;
+                        self.status("Connecting to your private tunnel…");
+                    }
+                    Err(error) => {
+                        self.fail(&format!("Could not protect the local dashboard: {error}"))
+                    }
+                }
             }
             Err(error) => self.fail(&format!("Could not launch the tunnel: {error}")),
         }
@@ -311,6 +350,7 @@ impl Modern {
             let ready = dashboard_ready_for(r);
             let ownership = port_ownership(Some(r));
             self.ready = ready;
+            let mut stop_reason = None;
             match ownership {
                 Ok(PortOwnership::Supervised) => self.status(if ready {
                     "Connected — tunnel ready."
@@ -318,24 +358,35 @@ impl Modern {
                     "Connecting to your private tunnel…"
                 }),
                 Ok(PortOwnership::Foreign) => {
-                    self.external = true;
-                    self.fail("The supervised tunnel does not own port 8080. Refusing to use another listener.");
+                    stop_reason = Some(
+                        "The supervised tunnel lost ownership of the protected dashboard ports. Stopping."
+                            .to_string(),
+                    );
                 }
                 Err(error) => {
-                    self.fail(&format!("Could not verify tunnel port ownership: {error}"))
+                    stop_reason = Some(format!("Could not verify tunnel port ownership: {error}"));
                 }
-                Ok(PortOwnership::Free) => self.status("Connecting to your private tunnel…"),
+                Ok(PortOwnership::Starting | PortOwnership::Free) => {
+                    self.status("Connecting to your private tunnel…")
+                }
+            }
+            if let Some(reason) = stop_reason {
+                self.external = true;
+                self.stop(&reason);
+                self.fail(&reason);
             }
         } else {
             match port_ownership(None) {
                 Ok(PortOwnership::Free) => self.external = false,
                 Ok(_) => {
                     self.external = true;
-                    self.status("Another process owns port 8080. Stop it first.");
+                    self.status("Another process owns a protected dashboard port. Stop it first.");
                 }
                 Err(error) => {
                     self.external = true;
-                    self.fail(&format!("Could not verify port 8080 ownership: {error}"));
+                    self.fail(&format!(
+                        "Could not verify protected dashboard port ownership: {error}"
+                    ));
                 }
             }
             if !self.external {
@@ -484,7 +535,7 @@ impl Modern {
                         }
                         Ok(_) => {
                             self.external = true;
-                            self.fail("Port 8080 is not owned by the supervised DeskPilot tunnel. Refusing to open it.")
+                            self.fail("The protected dashboard ports are not owned by the supervised DeskPilot tunnel. Refusing to open it.")
                         }
                         Err(error) => {
                             self.fail(&format!("Could not verify dashboard ownership: {error}"))
@@ -493,11 +544,11 @@ impl Modern {
                     None => match port_busy() {
                         Ok(true) => {
                             self.external = true;
-                            self.fail("Another process owns port 8080. Start DeskPilot's own tunnel first.")
+                            self.fail("Another process owns a protected dashboard port. Start DeskPilot's own tunnel first.")
                         }
                         Ok(false) => self.fail("Start the tunnel before opening the local dashboard."),
                         Err(error) => {
-                            self.fail(&format!("Could not verify port 8080 ownership: {error}"))
+                            self.fail(&format!("Could not verify protected dashboard port ownership: {error}"))
                         }
                     },
                 }

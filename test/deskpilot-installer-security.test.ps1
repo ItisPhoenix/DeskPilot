@@ -434,14 +434,26 @@ try {
         $newId = $namespacedTunnelId
         $existing = @"
 config_version: 1
+ca_bundle: attacker.pem
+http_proxy: http://attacker.example:8080
 control_plane:
   base_url: https://example.invalid
+  url_path: /attacker
+  residency: eu
+  http_proxy: http://attacker.example:8080
   tunnel_id: $oldId
   api_key: env:MY_RUNTIME_KEY
+cloudflared:
+  managed: false
+  path: attacker.exe
 health:
   listen_addr: "127.0.0.1:9999"
+  unix_socket: dashboard.sock
+  url_file: health.url
 admin_ui:
   open_browser: true
+  public_origin: https://attacker.example
+  base_path: "/deskpilot-abcdefghijklmnopqrstuvwx"
 log:
   level: debug
   format: json
@@ -458,17 +470,22 @@ mcp:
         $updated = Update-TunnelProfile -ExistingText $existing -TunnelId $newId -NodePath $node -InstallRoot $install
         Assert ($updated -match [regex]::Escape($newId)) 'New tunnel ID was not written.'
         Assert ($updated -notmatch [regex]::Escape($oldId)) 'Old tunnel ID remains.'
-        Assert ($updated -match 'base_url: https://example\.invalid') 'Custom control-plane URL was lost.'
-        Assert ($updated -match 'api_key: env:MY_RUNTIME_KEY') 'Custom API key reference was lost.'
-        Assert ($updated -match 'listen_addr: "127\.0\.0\.1:9999"') 'Custom health settings were lost.'
-        Assert ($updated -match 'open_browser: true' -and $updated -match 'level: debug' -and $updated -match 'startup_wait_timeout: 45s') 'Unrelated profile settings were lost.'
+        Assert ($updated -match 'base_url: "https://api\.openai\.com"') 'The official control-plane URL was not enforced.'
+        Assert ($updated -match 'api_key: "env:CONTROL_PLANE_API_KEY"') 'The managed runtime-key reference was not enforced.'
+        Assert ($updated -notmatch 'url_path:|residency:|unix_socket:|url_file:|public_origin:|http_proxy:|ca_bundle:|cloudflared:|attacker\.exe') 'Unsafe endpoint, proxy, CA, or Cloudflare overrides were not removed.'
+        Assert ($updated -match 'listen_addr: "127\.0\.0\.1:18080"') 'The protected upstream dashboard listener was not enforced.'
+        Assert ($updated -match 'allow_remote: false' -and $updated -match 'open_browser: false') 'Remote dashboard access or browser auto-open was not disabled.'
+        Assert ($updated -match 'base_path: "/deskpilot-[A-Za-z0-9_-]{24}"' -and $updated -notmatch 'deskpilot-abcdefghijklmnopqrstuvwx') 'The dashboard base path was not rotated to a fresh random value.'
+        Assert ($updated -match 'level: debug' -and $updated -match 'startup_wait_timeout: 45s') 'Unrelated profile settings were lost.'
         Assert ($updated -match 'channel: other\r?\n\s+command: other\.exe') 'A non-main MCP channel was changed.'
         Assert ($updated -match 'managed-launcher\.mjs' -and $updated -match 'runtime\\\\node\.exe') 'Main MCP command was not updated.'
     }
 
     Test-Case 'fresh profiles disable browser auto-open and use a strict ID' {
         $profile = Update-TunnelProfile -ExistingText '' -TunnelId $validTunnelId -NodePath (Join-Path $temp 'node.exe') -InstallRoot (Join-Path $temp 'DeskPilot')
-        Assert ($profile -match 'open_browser: false') 'Fresh profile must not auto-open a browser.'
+        Assert ($profile -match 'listen_addr: "127\.0\.0\.1:18080"') 'Fresh profile must use the protected upstream dashboard listener.'
+        Assert ($profile -match 'allow_remote: false' -and $profile -match 'open_browser: false') 'Fresh profile must disable remote UI and browser auto-open.'
+        Assert ($profile -match 'base_path: "/deskpilot-[A-Za-z0-9_-]{24}"') 'Fresh profile must use an unguessable dashboard base path.'
         Assert ($profile -match 'api_key: "?env:CONTROL_PLANE_API_KEY"?' -and $profile -notmatch '(?m)api_key:\s*"?(?:sk-|eyJ)') 'Fresh profile must not contain a literal API key.'
         Assert-Throws { Update-TunnelProfile -ExistingText '' -TunnelId 'bad' -NodePath 'node.exe' -InstallRoot 'C:\DeskPilot' } 'tunnel ID'
     }

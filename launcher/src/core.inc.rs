@@ -28,7 +28,6 @@ use windows_sys::Win32::{
 };
 
 const TITLE: &str = "DeskPilot";
-const DASH: &str = "http://127.0.0.1:8080/ui";
 const APPID: &str = "DeskPilot.PrivateDesktopControl.1";
 const TRAY: u32 = WM_APP + 1;
 const HOT: i32 = 77;
@@ -68,6 +67,7 @@ struct ListenerOwner {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PortOwnership {
     Free,
+    Starting,
     Supervised,
     Foreign,
 }
@@ -243,6 +243,79 @@ fn profile_uses_trusted_command(profile: &str, node: &Path, server: &Path) -> bo
         .filter_map(|line| line.strip_prefix("command:"));
     matches!(commands.next(), Some(actual) if actual.trim() == expected)
         && commands.next().is_none()
+}
+
+fn yaml_section_value<'a>(profile: &'a str, section: &str, child: &str) -> Option<&'a str> {
+    let mut current = "";
+    for line in profile.lines() {
+        let trimmed = line.trim();
+        if !line.starts_with(char::is_whitespace) && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            current = trimmed.split_once(':').map(|(name, _)| name.trim()).unwrap_or("");
+            continue;
+        }
+        if current == section {
+            if let Some((name, value)) = trimmed.split_once(':') {
+                if name.trim() == child {
+                    return Some(value.trim());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn yaml_string_value(profile: &str, section: &str, child: &str) -> Option<String> {
+    serde_json::from_str(yaml_section_value(profile, section, child)?).ok()
+}
+
+fn profile_has_key(profile: &str, key: &str) -> bool {
+    profile.lines().any(|line| {
+        let trimmed = line.trim();
+        !trimmed.is_empty()
+            && !trimmed.starts_with('#')
+            && trimmed
+                .split_once(':')
+                .is_some_and(|(name, _)| name.trim() == key)
+    })
+}
+
+fn trusted_dashboard_base_path(path: &str) -> bool {
+    let Some(token) = path.strip_prefix("/deskpilot-") else {
+        return false;
+    };
+    token.len() == 24
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn profile_dashboard_base_path(profile: &str) -> Option<String> {
+    yaml_string_value(profile, "admin_ui", "base_path")
+        .filter(|path| trusted_dashboard_base_path(path))
+}
+
+fn profile_uses_trusted_dashboard(profile: &str) -> bool {
+    let Ok(expected) = serde_json::to_string(dashboard_proxy::UPSTREAM_ADDR) else {
+        return false;
+    };
+    yaml_section_value(profile, "health", "listen_addr") == Some(expected.as_str())
+        && yaml_section_value(profile, "health", "unix_socket").is_none()
+        && yaml_section_value(profile, "admin_ui", "allow_remote") == Some("false")
+        && yaml_section_value(profile, "admin_ui", "open_browser") == Some("false")
+        && yaml_section_value(profile, "admin_ui", "public_origin").is_none()
+        && profile_dashboard_base_path(profile).is_some()
+}
+
+fn profile_uses_trusted_control_plane(profile: &str) -> bool {
+    yaml_string_value(profile, "control_plane", "base_url").as_deref()
+        == Some("https://api.openai.com")
+        && yaml_string_value(profile, "control_plane", "api_key").as_deref()
+            == Some("env:CONTROL_PLANE_API_KEY")
+        && yaml_section_value(profile, "control_plane", "url_path").is_none()
+        && yaml_section_value(profile, "control_plane", "residency").is_none()
+        && !profile_has_key(profile, "http_proxy")
+        && !profile_has_key(profile, "ca_bundle")
+        && !profile_has_key(profile, "cloudflared")
 }
 
 fn parse_stable_semver(input: &str) -> Option<String> {
@@ -1033,6 +1106,7 @@ struct Running {
     process: HANDLE,
     pid: u32,
     creation_time: FILETIME,
+    dashboard: Option<dashboard_proxy::DashboardProxy>,
 }
 
 impl Running {
@@ -1062,8 +1136,14 @@ impl Drop for Running {
     fn drop(&mut self) {
         unsafe {
             // Closing the last Job Object handle is the termination mechanism.
-            // Do not replace this with a parent-only TerminateProcess call.
+            // Do this before joining proxy workers so a stalled upstream cannot
+            // keep their copy loops alive during shutdown.
             CloseHandle(self.job);
+        }
+        if let Some(dashboard) = self.dashboard.as_mut() {
+            dashboard.stop();
+        }
+        unsafe {
             WaitForSingleObject(self.process, 2000);
             CloseHandle(self.process);
         }
@@ -1144,13 +1224,36 @@ fn listener_owners(port: u16) -> Result<Vec<ListenerOwner>, String> {
     }
 }
 
+fn listeners_are_owned_by(listeners: &[ListenerOwner], pid: u32) -> bool {
+    !listeners.is_empty()
+        && listeners
+            .iter()
+            .all(|listener| listener.loopback && listener.pid == pid)
+}
+
 fn port_ownership(supervised: Option<&Running>) -> Result<PortOwnership, String> {
-    if supervised.is_some_and(|running| !running.is_current()) {
+    let public = listener_owners(dashboard_proxy::PUBLIC_PORT)?;
+    let upstream = listener_owners(dashboard_proxy::UPSTREAM_PORT)?;
+    let Some(running) = supervised else {
+        return Ok(if public.is_empty() && upstream.is_empty() {
+            PortOwnership::Free
+        } else {
+            PortOwnership::Foreign
+        });
+    };
+    if !running.is_current()
+        || !listeners_are_owned_by(&public, std::process::id())
+    {
         return Ok(PortOwnership::Foreign);
     }
-    let pid = supervised.map(|running| running.pid);
-    let listeners = listener_owners(8080)?;
-    Ok(classify_port_ownership(&listeners, 8080, pid))
+    if upstream.is_empty() {
+        return Ok(PortOwnership::Starting);
+    }
+    Ok(if listeners_are_owned_by(&upstream, running.pid) {
+        PortOwnership::Supervised
+    } else {
+        PortOwnership::Foreign
+    })
 }
 
 fn port_busy() -> Result<bool, String> {
@@ -1196,10 +1299,14 @@ fn http_ok_for(running: &Running, path: &str, needle: &str) -> bool {
 }
 
 fn dashboard_ready_for(running: &Running) -> bool {
+    let Some(dashboard) = running.dashboard.as_ref() else {
+        return false;
+    };
     if !http_ok_for(running, "/readyz", "") {
         return false;
     }
-    let Some(status) = http_get("/api/status") else {
+    let status_path = format!("{}/api/status", dashboard.base_path());
+    let Some(status) = http_get(&status_path) else {
         return false;
     };
     let instance = serde_json::from_slice::<serde_json::Value>(&status)
@@ -1209,18 +1316,23 @@ fn dashboard_ready_for(running: &Running) -> bool {
     if !matches!(port_ownership(Some(running)), Ok(PortOwnership::Supervised)) {
         return false;
     }
-    instance.is_some() && http_ok_for(running, "/ui", "admin-ui-root")
+    let ui_path = format!("{}/ui", dashboard.base_path());
+    instance.is_some() && http_ok_for(running, &ui_path, "admin-ui-root")
 }
 
 fn open_dashboard(running: &Running) -> Result<(), DashboardOpen> {
     if !dashboard_ready_for(running) {
         return Err(DashboardOpen::NotReady);
     }
+    let Some(dashboard) = running.dashboard.as_ref() else {
+        return Err(DashboardOpen::NotReady);
+    };
+    let url = dashboard.url();
     let result = unsafe {
         ShellExecuteW(
             0,
             w("open").as_ptr(),
-            w(DASH).as_ptr(),
+            w(&url).as_ptr(),
             null(),
             null(),
             SW_SHOWNORMAL,
@@ -1237,6 +1349,42 @@ fn set_app_id() {
         let id = w(APPID);
         let _ = SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
     }
+}
+
+fn blocked_environment_name(name: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "ALLOW_REMOTE_UI",
+        "OPEN_WEB_UI",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "CA_BUNDLE",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "DC_MANAGED_POLICY",
+        "TUNNEL_CLIENT_PROFILE",
+        "TUNNEL_CLIENT_PROFILE_FILE",
+    ];
+    const PREFIXES: &[&str] = &[
+        "CLOUDFLARED_",
+        "CONTROL_PLANE_",
+        "HEALTH_",
+        "ADMIN_UI_",
+        "MCP_",
+        "OPENAI_",
+        "TUNNEL_CLIENT_",
+        "HARPOON_",
+        "NODE_",
+        "DC_",
+        "LOG_",
+    ];
+    let upper = name.to_ascii_uppercase();
+    EXACT.contains(&upper.as_str()) || PREFIXES.iter().any(|prefix| upper.starts_with(prefix))
 }
 
 fn launch_with_output(
@@ -1266,19 +1414,10 @@ fn launch_with_output(
             return Err(error);
         }
 
-        let blocked = [
-            "CONTROL_PLANE_API_KEY",
-            "OPENAI_API_KEY",
-            "OPENAI_ADMIN_KEY",
-            "CONTROL_PLANE_TUNNEL_ID",
-            "DC_MANAGED_POLICY",
-            "TUNNEL_CLIENT_PROFILE",
-            "TUNNEL_CLIENT_PROFILE_FILE",
-        ];
         let mut variables: Vec<(String, Vec<u16>)> = env::vars_os()
             .filter_map(|(key, value)| {
                 let name = key.to_string_lossy().to_string();
-                if blocked.iter().any(|item| name.eq_ignore_ascii_case(item)) {
+                if blocked_environment_name(&name) {
                     return None;
                 }
                 let mut entry: Vec<u16> = key.encode_wide().collect();
@@ -1397,6 +1536,7 @@ fn launch_with_output(
             process: process.hProcess,
             pid: process.dwProcessId,
             creation_time: creation,
+            dashboard: None,
         })
     }
 }
@@ -1867,6 +2007,70 @@ mod tests {
             node,
             server
         ));
+    }
+
+    #[test]
+    fn tunnel_profile_must_use_the_protected_dashboard() {
+        let valid = "health:\n  listen_addr: \"127.0.0.1:18080\"\nadmin_ui:\n  allow_remote: false\n  open_browser: false\n  base_path: \"/deskpilot-abcdefghijklmnopqrstuvwx\"\n";
+        assert!(profile_uses_trusted_dashboard(valid));
+        assert!(!profile_uses_trusted_dashboard(&valid.replace("18080", "8080")));
+        assert!(!profile_uses_trusted_dashboard(&valid.replace("allow_remote: false", "allow_remote: true")));
+        assert!(!profile_uses_trusted_dashboard(&valid.replace(
+            "/deskpilot-abcdefghijklmnopqrstuvwx",
+            "/predictable",
+        )));
+        assert!(!profile_uses_trusted_dashboard(
+            &valid.replace("health:\n", "health:\n  unix_socket: dashboard.sock\n")
+        ));
+        assert!(!profile_uses_trusted_dashboard(
+            "health:\n  listen_addr: \"127.0.0.1:18080\"\n"
+        ));
+    }
+
+    #[test]
+    fn security_sensitive_environment_overrides_are_blocked() {
+        for name in [
+            "HEALTH_LISTEN_ADDR",
+            "ALLOW_REMOTE_UI",
+            "OPEN_WEB_UI",
+            "ADMIN_UI_BASE_PATH",
+            "CONTROL_PLANE_BASE_URL",
+            "MCP_COMMAND",
+            "OPENAI_ADMIN_KEY",
+            "NODE_OPTIONS",
+            "SSL_CERT_FILE",
+            "CA_BUNDLE",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "CLOUDFLARED_PATH",
+            "CLOUDFLARED_TUNNEL_TOKEN",
+            "HARPOON_CAPTURE_PAYLOADS",
+        ] {
+            assert!(blocked_environment_name(name), "{name} must be blocked");
+        }
+        assert!(!blocked_environment_name("PATH"));
+        assert!(!blocked_environment_name("SystemRoot"));
+    }
+
+    #[test]
+    fn tunnel_profile_must_use_the_official_control_plane() {
+        let valid = "control_plane:\n  base_url: \"https://api.openai.com\"\n  api_key: \"env:CONTROL_PLANE_API_KEY\"\n";
+        assert!(profile_uses_trusted_control_plane(valid));
+        assert!(!profile_uses_trusted_control_plane(
+            &valid.replace("api.openai.com", "attacker.example")
+        ));
+        assert!(!profile_uses_trusted_control_plane(
+            &valid.replace("CONTROL_PLANE_API_KEY", "OTHER_KEY")
+        ));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}http_proxy: http://attacker.example\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}ca_bundle: attacker.pem\n"
+        )));
+        assert!(!profile_uses_trusted_control_plane(&format!(
+            "{valid}cloudflared:\n  path: attacker.exe\n"
+        )));
     }
 
     #[test]
