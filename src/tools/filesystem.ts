@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import os from 'os';
 import { execFile } from 'child_process';
@@ -117,6 +118,18 @@ async function getAllowedDirs(): Promise<string[]> {
     } catch (error) {
         console.error('Failed to read allowed directories; denying filesystem access:', error);
         return [];
+    }
+}
+
+// Full access is a local-only opt-in written by the DeskPilot desktop app.
+// Any value other than the exact string "full" stays restricted (fail closed).
+async function isFullFilesystemAccess(): Promise<boolean> {
+    try {
+        const config = await configManager.getConfig();
+        return config.filesystemAccessMode === 'full';
+    } catch (error) {
+        console.error('Failed to read filesystem access mode; denying filesystem access:', error);
+        return false;
     }
 }
 
@@ -277,6 +290,63 @@ function protectedRuntimePaths(): string[] {
     return dirs.map((entry) => normalizePath(path.resolve(entry)));
 }
 
+/** Normalized real paths of DeskPilot-owned trees, for callers that filter results. */
+export async function protectedPathPrefixes(): Promise<string[]> {
+    const prefixes: string[] = [];
+    for (const entry of protectedRuntimePaths()) {
+        prefixes.push(normalizePath(await resolveRealPath(path.resolve(entry))));
+    }
+    const policy = process.env.DC_MANAGED_POLICY;
+    if (policy) prefixes.push(normalizePath(await resolveRealPath(path.resolve(policy))));
+    return prefixes;
+}
+
+export type McpPathPrefixes = {
+    full: boolean;
+    allowed: string[];
+    protected: string[];
+};
+
+/** Snapshot of the active path boundaries, taken once when a search starts. */
+export async function mcpPathPrefixes(): Promise<McpPathPrefixes> {
+    const allowed: string[] = [];
+    if (!(await isFullFilesystemAccess())) {
+        for (const dir of await getAllowedDirs()) {
+            const resolved = await resolveRealPath(path.resolve(expandHome(dir))).catch(() => null);
+            if (resolved) allowed.push(normalizePath(resolved));
+        }
+    }
+    return { full: await isFullFilesystemAccess(), allowed, protected: await protectedPathPrefixes() };
+}
+
+/**
+ * Synchronous result check for a search. Resolves links so a junction inside a
+ * workspace cannot expose a protected tree, without making every result await
+ * a file read (which delays results the caller expects immediately).
+ */
+export function isAllowedMcpPathSync(filePath: string, prefixes: McpPathPrefixes): boolean {
+    try {
+        const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(process.cwd(), filePath);
+        // A result that vanished between the search and this check is still
+        // checked by its written path; a symlink that resolves is checked there.
+        let resolved = absolute;
+        try {
+            resolved = fsSync.realpathSync.native(absolute);
+        } catch {
+            // Use the written path rather than dropping a result whose file changed.
+        }
+        let written = normalizePath(absolute);
+        if (written.slice(-1) === path.sep) written = written.slice(0, -1);
+        let normalized = normalizePath(resolved);
+        if (normalized.slice(-1) === path.sep) normalized = normalized.slice(0, -1);
+        if (prefixes.protected.some((prefix) => isWithinAllowedDir(written, prefix) || isWithinAllowedDir(normalized, prefix))) return false;
+        if (prefixes.full) return true;
+        return prefixes.allowed.some((prefix) => isWithinAllowedDir(normalized, prefix));
+    } catch {
+        return false;
+    }
+}
+
 async function isProtectedRuntimePath(normalizedPathToCheck: string): Promise<boolean> {
     for (const entry of protectedRuntimePaths()) {
         const resolved = normalizePath(await resolveRealPath(path.resolve(entry)));
@@ -289,20 +359,50 @@ async function isProtectedRuntimePath(normalizedPathToCheck: string): Promise<bo
 }
 
 /**
+ * True when the path is a parent of a protected runtime path. Moving such a
+ * directory would relocate DeskPilot's config, policy or installation tree
+ * without ever naming a protected path directly.
+ */
+async function isAncestorOfProtectedRuntimePath(normalizedPathToCheck: string): Promise<boolean> {
+    for (const entry of protectedRuntimePaths()) {
+        const resolved = normalizePath(await resolveRealPath(path.resolve(entry)));
+        if (isWithinAllowedDir(resolved, normalizedPathToCheck)) return true;
+    }
+    const policy = process.env.DC_MANAGED_POLICY;
+    if (!policy) return false;
+    const resolvedPolicy = normalizePath(await resolveRealPath(path.resolve(policy)));
+    return isWithinAllowedDir(resolvedPolicy, normalizedPathToCheck);
+}
+
+async function assertMovablePath(validatedPath: string, requestedPath: string): Promise<void> {
+    let normalized = normalizePath(validatedPath);
+    if (normalized.slice(-1) === path.sep) {
+        normalized = normalized.slice(0, -1);
+    }
+    if (await isAncestorOfProtectedRuntimePath(normalized)) {
+        capture('server_move_protected_ancestor_denied');
+        throw new Error(`Path not allowed: ${requestedPath}. This folder contains DeskPilot configuration, policy or installation files and cannot be moved.`);
+    }
+}
+
+/**
  * Checks if a path is within any of the allowed directories
  *
  * @param pathToCheck Path to check
  * @returns boolean True if path is allowed
  */
 async function isPathAllowed(pathToCheck: string): Promise<boolean> {
-    const allowedDirectories = await getAllowedDirs();
-    if (allowedDirectories.length === 0) return false;
-
     let normalizedPathToCheck = normalizePath(pathToCheck);
     if (normalizedPathToCheck.slice(-1) === path.sep) {
         normalizedPathToCheck = normalizedPathToCheck.slice(0, -1);
     }
+    // DeskPilot's own configuration, policy and runtime stay private in every mode.
     if (await isProtectedRuntimePath(normalizedPathToCheck)) return false;
+
+    if (await isFullFilesystemAccess()) return true;
+
+    const allowedDirectories = await getAllowedDirs();
+    if (allowedDirectories.length === 0) return false;
 
     // As written first: no filesystem call, so an allowed directory on an
     // unresponsive mount can't hold up a path inside another one
@@ -377,12 +477,28 @@ export async function validatePath(requestedPath: string, { entry = false }: { e
 
         // Check if path is allowed
         if (!(await isPathAllowed(pathForNextCheck))) {
+            const allowedDirs = await getAllowedDirs();
             capture('server_path_validation_error', {
                 error: 'Path not allowed',
-                allowedDirsCount: (await getAllowedDirs()).length
+                allowedDirsCount: allowedDirs.length
             });
 
-            throw new Error(`Path not allowed: ${requestedPath}. Must be within one of these directories: ${(await getAllowedDirs()).join(', ')}`);
+            let normalizedForCheck = normalizePath(pathForNextCheck);
+            if (normalizedForCheck.slice(-1) === path.sep) {
+                normalizedForCheck = normalizedForCheck.slice(0, -1);
+            }
+            let reason: string;
+            if (await isProtectedRuntimePath(normalizedForCheck)) {
+                reason = 'DeskPilot keeps its configuration, policy and installation files private in every access mode.';
+            } else if (await isFullFilesystemAccess()) {
+                reason = 'This location is reserved by DeskPilot.';
+            } else if (allowedDirs.length === 0) {
+                reason = 'Filesystem access is restricted and no folders are allowed. Add a folder to the allowed list, or enable Full Filesystem Access locally in the DeskPilot app.';
+            } else {
+                reason = `Must be within one of these directories: ${allowedDirs.join(', ')}`;
+            }
+
+            throw new Error(`Path not allowed: ${requestedPath}. ${reason}`);
         }
 
         // SECURITY: Always return the resolved path (with symlinks resolved) so that
@@ -757,6 +873,7 @@ export async function createDirectory(dirPath: string): Promise<void> {
 export async function listDirectory(dirPath: string, depth: number = 2): Promise<string[]> {
     const validPath = await validatePath(dirPath);
     const results: string[] = [];
+    const prefixes = await mcpPathPrefixes();
 
     const MAX_NESTED_ITEMS = 100; // Maximum items to show per nested directory
 
@@ -799,6 +916,10 @@ export async function listDirectory(dirPath: string, depth: number = 2): Promise
             const isDirectory = entry.isDirectory()
                 || (entry.isSymbolicLink() && await fs.stat(fullPath).then((stats) => stats.isDirectory(), () => false));
 
+            // A result must resolve to a path this client may use. This keeps
+            // protected files, and links into them, out of recursive listings.
+            if (!isAllowedMcpPathSync(fullPath, prefixes)) continue;
+
             // Add this entry to results
             results.push(`${isDirectory ? "[DIR]" : "[FILE]"} ${displayPath}`);
 
@@ -840,6 +961,8 @@ export async function moveFile(sourcePath: string, destinationPath: string): Pro
     // changes letter case keeps the new case
     const validSourcePath = await validatePath(sourcePath, { entry: true });
     const validDestPath = await validatePath(destinationPath, { entry: true });
+    await assertMovablePath(validSourcePath, sourcePath);
+    await assertMovablePath(validDestPath, destinationPath);
     // Across volumes, a copy and then removing the source
     await movePath(validSourcePath, validDestPath);
 }
@@ -903,14 +1026,14 @@ async function searchFilesNodeJS(rootPath: string, pattern: string): Promise<str
             const fullPath = path.join(currentPath, entry.name);
 
             try {
-                await validatePath(fullPath);
+                const validEntry = await validatePath(fullPath);
 
                 if (entry.name.toLowerCase().includes(pattern.toLowerCase())) {
-                    results.push(fullPath);
+                    results.push(validEntry);
                 }
 
                 if (entry.isDirectory()) {
-                    await search(fullPath);
+                    await search(validEntry);
                 }
             } catch (error) {
                 continue;

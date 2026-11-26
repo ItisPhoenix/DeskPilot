@@ -79,6 +79,8 @@ struct Modern {
     error: bool,
     detail: String,
     mask: u8,
+    filesystem_full: bool,
+    allowed_dirs: Vec<String>,
     events: Vec<Value>,
     last_render: String,
 }
@@ -103,6 +105,8 @@ impl Modern {
                 .and_then(|s| s.trim().parse::<u8>().ok())
                 .filter(|m| *m <= 31)
                 .unwrap_or(0),
+            filesystem_full: filesystem_access_full(),
+            allowed_dirs: allowed_directories(),
             events: vec![],
             last_render: String::new(),
         }
@@ -151,7 +155,7 @@ impl Modern {
         } else {
             ("", "Offline")
         };
-        let s=json!({"preview":self.preview,"hot":self.hot,"tray":self.tray,"running":self.run.is_some(),"ready":self.ready,"external":self.external,"state":state,"label":label,"detail":self.detail,"saved":keyfile().exists(),"mask":self.mask,"startupEnabled":self.startup_enabled,"events":self.events}).to_string();
+        let s=json!({"preview":self.preview,"hot":self.hot,"tray":self.tray,"running":self.run.is_some(),"ready":self.ready,"external":self.external,"state":state,"label":label,"detail":self.detail,"saved":keyfile().exists(),"mask":self.mask,"filesystemFull":self.filesystem_full,"allowedDirs":self.allowed_dirs,"startupEnabled":self.startup_enabled,"events":self.events}).to_string();
         if !force && s == self.last_render {
             return;
         }
@@ -443,6 +447,51 @@ impl Modern {
             self.fail("Could not write permission policy.");
         }
     }
+    fn filesystem_mode(&mut self, full: bool) {
+        // Mode and allowlist changes come from the local WebView only; never from MCP.
+        if self.preview || self.external {
+            return;
+        }
+        if full == self.filesystem_full {
+            return;
+        }
+        match set_filesystem_access_mode(full) {
+            Ok(()) => {
+                self.filesystem_full = full;
+                if full {
+                    self.note("Filesystem access: Full Filesystem Access enabled locally.");
+                } else {
+                    self.note("Filesystem access: Restricted Access enabled.");
+                }
+            }
+            Err(error) => {
+                self.fail(&format!("Could not save filesystem access mode: {error}"));
+            }
+        }
+    }
+    fn allow_directory(&mut self, path: &str, add: bool) {
+        if self.preview || self.external {
+            return;
+        }
+        let result = if add {
+            add_allowed_directory(path)
+        } else {
+            remove_allowed_directory(path)
+        };
+        match result {
+            Ok(dirs) => {
+                self.allowed_dirs = dirs;
+                if add {
+                    self.note(&format!("Allowed folder added: {path}"));
+                } else {
+                    self.note(&format!("Allowed folder removed: {path}"));
+                }
+            }
+            Err(error) => {
+                self.fail(&format!("Could not update allowed folders: {error}"));
+            }
+        }
+    }
     unsafe fn tray(&mut self, add: bool) {
         let mut n: NOTIFYICONDATAW = zeroed();
         n.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
@@ -535,6 +584,16 @@ impl Modern {
             "permission" => {
                 if let Some(i) = v.get("index").and_then(Value::as_u64) {
                     self.permission(i as usize);
+                }
+            }
+            "filesystem-mode" => {
+                if let Some(full) = v.get("full").and_then(Value::as_bool) {
+                    self.filesystem_mode(full);
+                }
+            }
+            "fs-allow-add" | "fs-allow-remove" => {
+                if let Some(path) = v.get("path").and_then(Value::as_str) {
+                    self.allow_directory(path, action == "fs-allow-add");
                 }
             }
             "dashboard" => {

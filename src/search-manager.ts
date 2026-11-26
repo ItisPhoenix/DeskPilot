@@ -3,7 +3,8 @@ import { constants } from 'buffer';
 import { once } from 'events';
 import path from 'path';
 import fs from 'fs/promises';
-import { validatePath } from './tools/filesystem.js';
+import { validatePath, mcpPathPrefixes, isAllowedMcpPathSync } from './tools/filesystem.js';
+import type { McpPathPrefixes } from './tools/filesystem.js';
 import { capture } from './utils/capture.js';
 import { logger } from './utils/logger.js';
 import { getRipgrepPath } from './utils/ripgrep-resolver.js';
@@ -91,6 +92,22 @@ export interface SearchSession {
   endTime?: number;  // When the session completed: its runtime stops there
   completed: Promise<void>;  // Settles when the session completes
   markCompleted: () => void;
+  pathPrefixes: McpPathPrefixes;  // Path boundaries every result is checked against
+}
+
+/** Office results carry `file.xlsx:Sheet!RowN`; the path is the part before the sheet. */
+function resultPathOf(file: string): string {
+  return /^(.*):[^:]+!Row\d+$/.exec(file)?.[1] ?? file;
+}
+
+function isPrefixProtectedPath(prefixes: string[], file: string): boolean {
+  try {
+    let normalized = path.resolve(resultPathOf(file)).toLowerCase();
+    if (normalized.endsWith(path.sep)) normalized = normalized.slice(0, -1);
+    return prefixes.some(prefix => normalized === prefix || normalized.startsWith(prefix + path.sep));
+  } catch {
+    return false;
+  }
 }
 
 export interface SearchSessionOptions {
@@ -259,6 +276,11 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
   private sessionCounter = 0;
   private cleanupTimer: NodeJS.Timeout | null = null;
 
+  /** Every result, from ripgrep, Excel or DOCX, passes this check before it is stored. */
+  private resultAllowed(session: SearchSession, file: string): boolean {
+    return isAllowedMcpPathSync(resultPathOf(file), session.pathPrefixes);
+  }
+
   /**
    * Start a new search session (like start_process)
    * Returns immediately with initial state and results
@@ -269,6 +291,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     
     // Validate path first
     const validPath = await validatePath(options.rootPath);
+    // Snapshot the current permission boundaries; every result is checked against them.
+    const pathPrefixes = await mcpPathPrefixes();
 
     // Build ripgrep arguments
     const args = this.buildRipgrepArgs({ ...options, rootPath: validPath });
@@ -311,7 +335,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
       pendingSources: new Set<SearchSource>(['ripgrep']),
       unsearched: new Map(),
       completed,
-      markCompleted
+      markCompleted,
+      pathPrefixes
     };
 
     this.sessions.set(sessionId, session);
@@ -356,7 +381,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
         options.ignoreCase !== false,
         sink,
         options.filePattern,  // Pass filePattern to filter Excel files too
-        options.includeHidden === true
+        options.includeHidden === true,
+        pathPrefixes.protected
       ));
     }
 
@@ -371,7 +397,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
         options.ignoreCase !== false,
         sink,
         options.filePattern,
-        options.includeHidden === true
+        options.includeHidden === true,
+        pathPrefixes.protected
       ));
     }
 
@@ -610,14 +637,15 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     ignoreCase: boolean,
     sink: SourceSink,
     filePattern?: string,
-    includeHidden = false
+    includeHidden = false,
+    protectedPrefixes: string[] = []
   ): Promise<void> {
     // Office file search always uses literal matching to prevent ReDoS.
     // Regex patterns are treated as literal strings — this is intentional.
     const searchTerm = ignoreCase ? pattern.toLowerCase() : pattern;
 
     // Find Excel files recursively
-    let excelFiles = await this.findExcelFiles(rootPath, sink, includeHidden);
+    let excelFiles = await this.findExcelFiles(rootPath, sink, includeHidden, protectedPrefixes);
 
     // Filter by filePattern if provided
     if (filePattern) {
@@ -709,7 +737,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
    * Find all Excel files in a directory recursively. Stops walking once the
    * search is stopped; a folder it can't list is reported to the sink.
    */
-  private async findExcelFiles(rootPath: string, sink: SourceSink, includeHidden = false): Promise<string[]> {
+  private async findExcelFiles(rootPath: string, sink: SourceSink, includeHidden = false, protectedPrefixes: string[] = []): Promise<string[]> {
     const excelFiles: string[] = [];
     const enters = (name: string) => this.officeWalkEnters(name, includeHidden);
 
@@ -720,6 +748,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
 
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
+          if (isPrefixProtectedPath(protectedPrefixes, fullPath)) continue;
 
           if (entry.isDirectory()) {
             if (enters(entry.name)) {
@@ -737,6 +766,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
 
     // Check if rootPath is a file or directory
     try {
+      if (isPrefixProtectedPath(protectedPrefixes, rootPath)) return excelFiles;
       const stats = await fs.stat(rootPath);
       if (stats.isFile() && isExcelFile(rootPath)) {
         return [rootPath];
@@ -811,13 +841,14 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     ignoreCase: boolean,
     sink: SourceSink,
     filePattern?: string,
-    includeHidden = false
+    includeHidden = false,
+    protectedPrefixes: string[] = []
   ): Promise<void> {
     // Office file search always uses literal matching to prevent ReDoS.
     // Regex patterns are treated as literal strings — this is intentional.
     const searchTerm = ignoreCase ? pattern.toLowerCase() : pattern;
 
-    let docxFiles = await this.findDocxFiles(rootPath, sink, includeHidden);
+    let docxFiles = await this.findDocxFiles(rootPath, sink, includeHidden, protectedPrefixes);
 
     if (filePattern) {
       docxFiles = this.filterOfficeFiles(docxFiles, filePattern, rootPath);
@@ -883,7 +914,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
    * Find all DOCX files in a directory recursively. Stops walking once the
    * search is stopped; a folder it can't list is reported to the sink.
    */
-  private async findDocxFiles(rootPath: string, sink: SourceSink, includeHidden = false): Promise<string[]> {
+  private async findDocxFiles(rootPath: string, sink: SourceSink, includeHidden = false, protectedPrefixes: string[] = []): Promise<string[]> {
     const docxFiles: string[] = [];
     const enters = (name: string) => this.officeWalkEnters(name, includeHidden);
     const isDocx = (name: string) => name.toLowerCase().endsWith('.docx');
@@ -894,6 +925,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
+          if (isPrefixProtectedPath(protectedPrefixes, fullPath)) continue;
           if (entry.isDirectory()) {
             if (enters(entry.name)) {
               await walk(fullPath);
@@ -908,6 +940,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     }
 
     try {
+      if (isPrefixProtectedPath(protectedPrefixes, rootPath)) return docxFiles;
       const stats = await fs.stat(rootPath);
       if (stats.isFile() && isDocx(rootPath)) {
         return [rootPath];
@@ -1217,6 +1250,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
 
   /** Something the search couldn't search: counted by kind, the first one kept as the example */
   private noteUnsearched(session: SearchSession, kind: UnsearchedKind, example: string): void {
+    const candidate = example.includes(' (os error ') ? example.split(' (os error ')[0] : example.split(':')[0];
+    if (isPrefixProtectedPath(session.pathPrefixes.protected, candidate)) return;
     const noted = session.unsearched.get(kind);
     if (noted) noted.count++;
     else session.unsearched.set(kind, { kind, count: 1, example });
@@ -1323,7 +1358,9 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
       return;
     }
     const file = this.fileOfOutputLine((session.buffer + text).slice(0, 4096)) ?? '';
-    session.skippedLines.set(file, (session.skippedLines.get(file) ?? 0) + 1);
+    if (file && !isPrefixProtectedPath(session.pathPrefixes.protected, file)) {
+      session.skippedLines.set(file, (session.skippedLines.get(file) ?? 0) + 1);
+    }
     session.skippingLine = true;
     session.buffer = '';
   }
@@ -1396,8 +1433,10 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
       session.trailingContext = undefined;
     } else if (!this.atMaxResults(session)) {
       if (line.kind === 'context') {
-        session.results.push(line.result);
-        session.totalContextLines++;
+        if (this.resultAllowed(session, line.result.file)) {
+          session.results.push(line.result);
+          session.totalContextLines++;
+        }
       } else {
         // Note where this match's trailing context ends, in case it is the last match
         const contextLines = session.options.contextLines ?? 0;
@@ -1409,7 +1448,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     } else {
       const trailing = session.trailingContext;
       const lineNumber = line.result.line;
-      if (trailing && line.result.file === trailing.file && lineNumber !== undefined && lineNumber <= trailing.lastLine) {
+      if (trailing && line.result.file === trailing.file && lineNumber !== undefined && lineNumber <= trailing.lastLine
+          && this.resultAllowed(session, line.result.file)) {
         session.results.push({ ...line.result, context: true });
         session.totalContextLines++;
         if (lineNumber === trailing.lastLine) {
@@ -1430,6 +1470,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
    */
   private collectMatch(session: SearchSession, result: SearchResult): void {
     if (this.atMaxResults(session)) return;
+    if (!this.resultAllowed(session, result.file)) return;
 
     session.results.push(result);
     session.totalMatches++;

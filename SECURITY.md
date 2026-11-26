@@ -37,6 +37,8 @@ All five categories are disabled on first launch:
 
 A missing, unreadable, or malformed `permissions.txt` fails closed. Enabling Files does not grant access when no workspace is configured: every Files-category call is denied until `allowedDirectories` contains at least one explicit directory.
 
+The desktop app's two Filesystem Permission modes (**Restricted Access**, the default, and **Full Filesystem Access**, a local opt-in) bound only Files-category tools. Restricted mode allows only `allowedDirectories`; an empty list denies all Files-category calls. Full mode allows ordinary files anywhere the Windows account can reach, except DeskPilot's configuration, policy, and installation paths. Neither mode limits Terminal, Screen, Mouse, Keyboard, or arbitrary commands run as the user; those have separate permission toggles.
+
 Permissions are checked by the MCP server for each call. They are local policy, not authentication of the person or model making the request. Stop the tunnel before changing permissions if you need to prevent an in-flight call from using the previous policy.
 
 ### File and terminal boundaries

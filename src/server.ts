@@ -348,7 +348,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         - fileWriteLineLimit (number, max lines per write_file call)
                         - telemetryEnabled (boolean)
 
-                        IMPORTANT: An empty allowedDirectories array denies all filesystem access.
+                        IMPORTANT: In Restricted Access an empty allowedDirectories array denies all filesystem access.
+                        Filesystem permission modes restrict Files-category tools only; terminal and desktop operations are independent.
+                        Full Filesystem Access is enabled only from the local DeskPilot app, never through this tool.
                         DeskPilot configuration, policy and installation paths are always protected.
                         This tool is disabled for managed remote MCP callers.
 

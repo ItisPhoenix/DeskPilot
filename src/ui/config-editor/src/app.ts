@@ -321,7 +321,7 @@ function getSettingSummary(entry: ConfigEntry): string | null {
     }
 
     if (count === 0) {
-        return 'All folders allowed (no restriction)';
+        return 'No folders allowed — file tools are denied';
     }
 
     return `${count} folder${count === 1 ? '' : 's'} allowed`;

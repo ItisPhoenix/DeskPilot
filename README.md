@@ -196,6 +196,13 @@ Files-category tools require a non-empty `allowedDirectories` list in:
 
 **With no workspace configured, every Files-category call is denied.** Add at least one explicit directory before enabling Files. Do not treat an empty list or a whole drive root as a safe default.
 
+The DeskPilot control window offers two Filesystem Permission modes under **Host permissions**:
+
+- **Restricted Access (default):** Files-category tools reach only folders in `allowedDirectories`; an empty list denies every Files-category call.
+- **Full Filesystem Access:** Files-category tools reach ordinary files anywhere the Windows account can, except DeskPilot's own configuration, policy, and installation files. This mode is a local opt-in in the desktop app; no MCP tool can enable it. A confirmation warning is shown before enabling it.
+
+These modes restrict **Files-category tools only**. They do not constrain terminal commands, screen capture, mouse, keyboard, or any other Windows operation. Terminal and desktop categories have their own toggles in the same **Host permissions** panel and remain independent.
+
 Exit DeskPilot before editing the file. Preserve the other settings and add a workspace with PowerShell, replacing the example path:
 
 ```powershell

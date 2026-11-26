@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     ptr::{null, null_mut},
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use sha2::{Digest, Sha256};
@@ -796,6 +796,202 @@ fn logfile() -> PathBuf {
 
 fn policy() -> PathBuf {
     dir().join("permissions.txt")
+}
+
+fn config_file() -> PathBuf {
+    dir().join("config.json")
+}
+
+const CONFIG_LOCK_STALE: Duration = Duration::from_secs(30);
+const CONFIG_LOCK_BUDGET: Duration = Duration::from_millis(1500);
+
+fn config_lock_path() -> PathBuf {
+    let mut name = config_file().into_os_string();
+    name.push(".lock");
+    PathBuf::from(name)
+}
+
+/// Directory lock compatible with proper-lockfile, which the TypeScript server
+/// uses. Without it, two processes could replace config.json from stale reads.
+struct ConfigLock {
+    path: PathBuf,
+    stamp: SystemTime,
+}
+
+impl ConfigLock {
+    fn acquire() -> Result<Self, String> {
+        let deadline = Instant::now() + CONFIG_LOCK_BUDGET;
+        let mut delay = 10u64;
+        loop {
+            match fs::create_dir(config_lock_path()) {
+                Ok(()) => {
+                    let path = config_lock_path();
+                    let stamp = fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .unwrap_or_else(|_| SystemTime::now());
+                    return Ok(Self { path, stamp });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let path = config_lock_path();
+                    let stale = fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .map(|t| t < SystemTime::now() - CONFIG_LOCK_STALE)
+                        .unwrap_or(false);
+                    if stale && fs::remove_dir(&path).is_ok() {
+                        continue;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err("config.json is locked by the MCP server; retry".to_string());
+                    }
+                    std::thread::sleep(Duration::from_millis(delay));
+                    delay = (delay.saturating_mul(12) / 10).min(100);
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+
+    fn still_ours(&self) -> bool {
+        fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .map(|t| t == self.stamp)
+            .unwrap_or(false)
+    }
+}
+
+impl Drop for ConfigLock {
+    fn drop(&mut self) {
+        if self.still_ours() {
+            let _ = fs::remove_dir(&self.path);
+        }
+    }
+}
+
+fn read_config_value() -> Result<serde_json::Value, String> {
+    match fs::read_to_string(config_file()) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| e.to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Mutates config.json atomically, preserving every key the caller doesn't touch.
+fn mutate_config(mutate: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>)) -> Result<(), String> {
+    let lock = ConfigLock::acquire()?;
+    let mut value = read_config_value()?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| "config.json is not an object".to_string())?;
+    mutate(object);
+    if !lock.still_ours() {
+        return Err("config lock was lost before the write committed".to_string());
+    }
+    let mut bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    atomic_write(&config_file(), &bytes).map_err(|e| e.to_string())
+}
+
+/// Reads the local server config without rewriting it. Missing, malformed or
+/// unknown values are treated as restricted (fail closed). Only the exact
+/// string "full" grants full filesystem access.
+fn filesystem_access_full() -> bool {
+    let Ok(value) = read_config_value() else {
+        return false;
+    };
+    value
+        .get("filesystemAccessMode")
+        .and_then(serde_json::Value::as_str)
+        == Some("full")
+}
+
+fn allowed_directories() -> Vec<String> {
+    let Ok(value) = read_config_value() else {
+        return vec![];
+    };
+    value
+        .get("allowedDirectories")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .filter(|entry| !entry.trim().is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Sets the local filesystem access mode while preserving every other config
+/// key and value. Writes are atomic so a running MCP server never sees a
+/// partial config.json.
+fn set_filesystem_access_mode(full: bool) -> Result<(), String> {
+    mutate_config(|object| {
+        object.insert(
+            "filesystemAccessMode".to_string(),
+            serde_json::Value::String(if full { "full" } else { "restricted" }.to_string()),
+        );
+    })
+}
+
+fn validate_allowed_directory(input: &str) -> Result<String, String> {
+    let value = input.trim();
+    if value.is_empty() {
+        return Err("Enter a folder path first.".to_string());
+    }
+    if value.len() > 4096 || value.chars().any(|c| c.is_control()) {
+        return Err("That folder path is not valid.".to_string());
+    }
+    let candidate = Path::new(value);
+    if !candidate.is_absolute() {
+        return Err("Enter a full path, for example C:\\Users\\me\\Documents.".to_string());
+    }
+    Ok(value.to_string())
+}
+
+fn add_allowed_directory(input: &str) -> Result<Vec<String>, String> {
+    let value = validate_allowed_directory(input)?;
+    let mut dirs = allowed_directories();
+    if dirs.len() >= 100 {
+        return Err("The allowed folder list is full (100 folders).".to_string());
+    }
+    let equivalent = normalize_path_text(&value);
+    if dirs.iter().any(|entry| normalize_path_text(entry) == equivalent) {
+        return Err("That folder is already allowed.".to_string());
+    }
+    dirs.push(value);
+    persist_allowed_directories(&dirs)?;
+    Ok(dirs)
+}
+
+fn remove_allowed_directory(input: &str) -> Result<Vec<String>, String> {
+    let value = validate_allowed_directory(input)?;
+    let equivalent = normalize_path_text(&value);
+    let mut dirs = allowed_directories();
+    dirs.retain(|entry| normalize_path_text(entry) != equivalent);
+    persist_allowed_directories(&dirs)?;
+    Ok(dirs)
+}
+
+fn normalize_path_text(value: &str) -> String {
+    value
+        .trim()
+        .trim_end_matches(['\\', '/'])
+        .replace('/', "\\")
+        .to_lowercase()
+}
+
+fn persist_allowed_directories(dirs: &[String]) -> Result<(), String> {
+    mutate_config(|object| {
+        object.insert(
+            "allowedDirectories".to_string(),
+            serde_json::Value::Array(
+                dirs.iter()
+                    .map(|entry| serde_json::Value::String(entry.clone()))
+                    .collect(),
+            ),
+        );
+    })
 }
 
 fn temporary_path(directory: &Path, label: &str) -> PathBuf {
@@ -1957,6 +2153,72 @@ mod tests {
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn filesystem_permissions_preserve_config_and_validate_paths() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let scratch = Scratch::new("fs-perms");
+        let app = scratch.0.join("DeskPilot");
+        fs::create_dir_all(&app).unwrap();
+        let config = app.join("config.json");
+        fs::write(
+            &config,
+            r#"{"allowedDirectories":[],"telemetryEnabled":false,"clientId":"keep"}"#,
+        )
+        .unwrap();
+        let previous_local_app_data = env::var_os("LOCALAPPDATA");
+        env::set_var("LOCALAPPDATA", &scratch.0);
+
+        assert!(!filesystem_access_full());
+        assert!(add_allowed_directory("relative\\folder").is_err());
+        let dirs = add_allowed_directory("C:\\Users\\me\\Documents").unwrap();
+        assert_eq!(dirs, vec!["C:\\Users\\me\\Documents"]);
+        assert!(add_allowed_directory("c:/users/me/documents/").is_err());
+        set_filesystem_access_mode(true).unwrap();
+        assert!(filesystem_access_full());
+
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        assert_eq!(saved["telemetryEnabled"], false);
+        assert_eq!(saved["clientId"], "keep");
+        assert_eq!(saved["filesystemAccessMode"], "full");
+
+        let remaining = remove_allowed_directory("C:\\Users\\me\\Documents").unwrap();
+        assert!(remaining.is_empty());
+        set_filesystem_access_mode(false).unwrap();
+        assert!(!filesystem_access_full());
+
+        match previous_local_app_data {
+            Some(value) => env::set_var("LOCALAPPDATA", value),
+            None => env::remove_var("LOCALAPPDATA"),
+        }
+    }
+
+    #[test]
+    fn config_write_refuses_when_the_mcp_server_holds_the_lock() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let scratch = Scratch::new("config-lock");
+        let app = scratch.0.join("DeskPilot");
+        fs::create_dir_all(&app).unwrap();
+        let config = app.join("config.json");
+        let original = br#"{"telemetryEnabled":false}"#;
+        fs::write(&config, original).unwrap();
+        let previous_local_app_data = env::var_os("LOCALAPPDATA");
+        env::set_var("LOCALAPPDATA", &scratch.0);
+
+        fs::create_dir(config_lock_path()).unwrap();
+        let result = mutate_config(|object| {
+            object.insert("filesystemAccessMode".to_string(), serde_json::json!("full"));
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read(&config).unwrap(), original);
+        fs::remove_dir(config_lock_path()).unwrap();
+
+        match previous_local_app_data {
+            Some(value) => env::set_var("LOCALAPPDATA", value),
+            None => env::remove_var("LOCALAPPDATA"),
         }
     }
 

@@ -15,7 +15,7 @@ export const CONFIG_FIELD_DEFINITIONS = {
   },
   allowedDirectories: {
     label: 'Allowed Folders',
-    description: 'These are the folders Desktop Commander is allowed to read and edit. Think of this as a permission list. Keeping it small is safer. If this list is empty, Desktop Commander can access your entire filesystem.',
+    description: 'In Restricted Access these are the only folders Files-category tools can read and edit. An empty list denies all filesystem access. Keeping it small is safer. Full Filesystem Access, enabled locally in the DeskPilot app, ignores this list for ordinary files but never exposes DeskPilot configuration, policy or installation files. These modes do not restrict terminal commands or desktop tools.',
     valueType: 'array',
   },
   defaultShell: {

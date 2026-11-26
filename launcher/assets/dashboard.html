@@ -14,7 +14,7 @@
 .wordmark{font-family:"Segoe UI Variable Display","Segoe UI",Arial,sans-serif;font-size:24px;font-weight:800;letter-spacing:-1.35px;color:#f8faf7;line-height:1}.wordmark em{font-style:italic;color:#c2f463;font-weight:800}
 .top-right{display:flex;align-items:center;gap:16px}.meta{color:var(--muted);font-size:11px}.top-right .meta{font:10px Consolas,monospace;letter-spacing:.09em}
 .icon-button{width:38px;height:36px;display:grid;place-items:center;border:1px solid #505b57;border-radius:8px;background:transparent;color:#d2d9d1}.icon-button:hover{background:#2b3534;border-color:#748078}
-.layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;flex:1;min-height:420px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;flex:1;min-height:420px}.layout>*{min-height:0}
 .map{position:relative;display:flex;flex-direction:column;padding:24px 24px 20px;background-image:radial-gradient(#68736c44 .8px,transparent .8px);background-size:20px 20px;min-width:0}
 .eyebrow{font:10px Consolas,monospace;color:#a8b2a9;letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px}
 .map-heading{font-size:27px;font-weight:510;letter-spacing:-.9px;line-height:1.2;margin:0 0 4px}.intro{color:var(--muted);font-size:12px}
@@ -37,7 +37,7 @@
 .action:hover:not(:disabled){background:#414d48;border-color:#718078}.action:active:not(:disabled){transform:translateY(1px)}
 .action svg{width:16px;height:16px}.action.primary{background:var(--on);border-color:var(--on);color:#263321}.action.primary:hover:not(:disabled){background:#d6f4b9;border-color:#d6f4b9}
 .action.danger{border:1px solid #8d5e59;background:transparent;color:var(--danger)}.action.danger:hover:not(:disabled){background:#452d2c;border-color:#b67870}
-.side{background:var(--side);border-left:1px solid var(--line);padding:22px 19px;min-width:0}
+.side{background:var(--side);border-left:1px solid var(--line);padding:22px 19px;min-width:0;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#56625f transparent}
 .side h3{font-size:14px;font-weight:670;margin:0 0 4px}.side .count{margin:0 0 14px;font-size:11px}
 .permission-row{display:flex;align-items:center;gap:10px;min-height:43px;border-top:1px solid #37403f}.permission-row>svg{width:17px;height:17px;color:#abb8b0}.permission-row strong{font-size:12px;font-weight:620;flex:1}
 .switch{width:34px;height:19px;flex:none;position:relative;border:0;border-radius:999px;background:#4c5756;padding:0;transition:background .16s}
@@ -49,7 +49,7 @@
 .kbd{font:10px Consolas,monospace;color:#b9a39e;white-space:nowrap;margin-left:2px}
 .bottom{height:40px;flex:none;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 23px;color:#a2ada6;font:10px Consolas,monospace}
 .text-button{border:0;background:transparent;color:#a2ada6;padding:4px 0;font:inherit;text-decoration:underline;text-underline-offset:3px}.text-button:hover{color:#edf2e9}.text-button:disabled{opacity:.35}
-.drawer{position:absolute;left:18px;right:18px;bottom:104px;z-index:20;max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.38);padding:16px 24px;background:#252e2e}.drawer[hidden]{display:none!important}.drawer-inner{max-width:690px}.drawer h3{font-size:14px;margin:0 0 5px}.drawer p{font-size:11px;color:var(--muted);margin:0 0 12px;max-width:620px}.drawer-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.credential{display:flex;align-items:center;gap:9px;flex:1;min-width:220px;background:#1d2425;border:1px solid #48554e;border-radius:7px;padding:0 11px;height:39px}.credential svg{width:16px;height:16px;color:#aeb9b0}.credential input{min-width:0;flex:1;background:transparent;border:0;outline:0;color:var(--text);font-size:12px}.remember{display:flex;align-items:center;gap:7px;color:#d2d9d1;font-size:11px;margin-top:10px}.remember input{accent-color:var(--on);width:14px;height:14px}.startup-setting{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 14px;border:1px solid #48554e;border-radius:8px;background:#1d2425}.startup-setting strong{display:block;font-size:12px;font-weight:650}.startup-setting small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.startup-setting input{width:38px;height:21px;accent-color:var(--on);flex:none}.settings-status{margin-top:9px;color:var(--muted);font-size:10px}
+.drawer{position:absolute;left:18px;right:18px;bottom:104px;z-index:20;max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.38);padding:16px 24px;background:#252e2e}.drawer[hidden]{display:none!important}.drawer-inner{max-width:690px}.drawer h3{font-size:14px;margin:0 0 5px}.drawer p{font-size:11px;color:var(--muted);margin:0 0 12px;max-width:620px}.drawer-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.credential{display:flex;align-items:center;gap:9px;flex:1;min-width:220px;background:#1d2425;border:1px solid #48554e;border-radius:7px;padding:0 11px;height:39px}.credential svg{width:16px;height:16px;color:#aeb9b0}.credential input{min-width:0;flex:1;background:transparent;border:0;outline:0;color:var(--text);font-size:12px}.remember{display:flex;align-items:center;gap:7px;color:#d2d9d1;font-size:11px;margin-top:10px}.remember input{accent-color:var(--on);width:14px;height:14px}.startup-setting{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 14px;border:1px solid #48554e;border-radius:8px;background:#1d2425}.startup-setting strong{display:block;font-size:12px;font-weight:650}.startup-setting small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.startup-setting input{width:38px;height:21px;accent-color:var(--on);flex:none}.settings-status{margin-top:9px;color:var(--muted);font-size:10px}.fs-panel{margin-top:12px;border-top:1px solid #37403f;padding-top:10px}.fs-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.fs-head strong{font-size:12px;font-weight:650}.fs-toggle-wrap{display:flex;align-items:center;gap:7px}.fs-toggle-wrap .meta{font-size:9px}.fs-info{margin-top:5px;padding:5px 7px;border:1px solid #48554e;border-radius:5px;background:#1d2425;color:var(--soft);font-size:9px;line-height:1.4}.fs-mode{font-size:10px;color:var(--muted);margin:5px 0 0;line-height:1.4}.fs-warning{margin-top:7px;padding:7px 9px;border:1px solid #8d5e59;border-radius:6px;background:#452d2c;color:#ffd9d3;font-size:9px;line-height:1.4}.fs-list{list-style:none;margin:8px 0;padding:0;max-height:96px;overflow:auto;border:1px solid #37403f;border-radius:6px}.fs-list li{display:flex;align-items:center;gap:6px;padding:5px 7px;border-top:1px solid #37403f;font-size:10px}.fs-list li:first-child{border-top:0}.fs-list span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fs-list button{border:0;background:transparent;color:var(--danger);font-size:10px;padding:2px 3px}.fs-add{display:flex;gap:6px}.fs-add input{min-width:0;flex:1;background:#1d2425;border:1px solid #48554e;border-radius:6px;color:var(--text);font-size:10px;padding:0 8px;height:30px}.fs-add button{min-height:30px;padding:0 10px;font-size:10px}.fs-status{margin-top:6px;min-height:12px;font-size:9px;color:var(--muted)}.fs-empty{font-size:10px;color:var(--muted);padding:6px 7px}
 .drawer-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.drawer-actions .action{min-height:33px}.drawer-actions .quiet{background:transparent}.drawer-note{margin-top:9px;color:#aab6ae;font-size:10px}.event-list{display:grid;gap:0;margin:9px 0 0;padding:0;list-style:none;max-height:220px;overflow:auto}.event-list li{display:grid;grid-template-columns:82px minmax(0,1fr);gap:12px;padding:8px 0;border-top:1px solid #3a4442;font-size:11px}.event-list time{font:10px Consolas,monospace;color:#a7b2ac}.event-list span{overflow-wrap:anywhere}.empty{font-size:11px;color:var(--muted);padding:12px 0}
 .notice{font-size:11px;color:var(--muted);min-height:0;margin-top:0}.notice:not(:empty){min-height:16px;margin-top:7px}
 @media(max-width:820px){.layout{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);padding:17px 20px}.permission-row{display:inline-flex;width:48%;padding-right:8px}.side .permissions-list{display:flex;flex-wrap:wrap;gap:0 14px}.map{min-height:420px}.top-right .meta{display:none}}
@@ -84,6 +84,15 @@
     <h3>Host permissions</h3>
     <p class="meta count" data-count>0 of 5 allowed</p>
     <div class="permissions-list" data-perms></div>
+    <div class="fs-panel">
+      <div class="fs-head"><strong>Filesystem access</strong><span class="fs-toggle-wrap"><span class="meta">Full access</span><button class="switch" type="button" role="switch" aria-checked="false" aria-label="Full Filesystem Access" data-action="fs-toggle"></button></span></div>
+      <div class="fs-info" data-fs-info>Default: Restricted Access — no folders allowed until you add one. Applies to Files-category tools only; Terminal and desktop toggles above are separate.</div>
+      <p class="fs-mode" data-fs-mode>Restricted Access — only folders below are available to Files tools. Terminal and desktop operations are not restricted by this mode.</p>
+      <div class="fs-warning" data-fs-warning hidden><strong>Warning:</strong> Full Filesystem Access lets any connected MCP client read, edit and delete ordinary files anywhere this Windows account can reach. DeskPilot's own files stay private. Enable only if you trust the client.</div>
+      <ul class="fs-list" data-fs-list></ul>
+      <div class="fs-add"><input type="text" data-fs-input maxlength="4096" autocomplete="off" spellcheck="false" placeholder="C:\Users\me\Documents" aria-label="Folder path to allow"><button class="action" type="button" data-action="fs-add">Add</button></div>
+      <div class="fs-status" data-fs-status aria-live="polite"></div>
+    </div>
     <div class="key-actions"><span class="meta" data-key-indicator>No key saved</span><button class="action" data-action="key">Manage</button></div>
   </aside>
 </div>
@@ -155,10 +164,12 @@
 (function(){
   const $=function(selector){return document.querySelector(selector);};
   const names=[["Terminal","i-terminal"],["Files","i-folder"],["Screen","i-screen"],["Mouse","i-mouse"],["Keyboard","i-keyboard"]];
-  let latest=null,drawer="",preview=false,firstRunPrompted=false;
+  let latest=null,drawer="",preview=false,firstRunPrompted=false,fsMessage="";
   const send=function(action,extra){if(window.ipc&&window.ipc.postMessage){window.ipc.postMessage(JSON.stringify(Object.assign({action:action},extra||{})));}};
   function setDrawer(name){drawer=name;document.querySelectorAll("[data-drawer]").forEach(function(el){el.hidden=el.dataset.drawer!==name;});}
   function buildPermissions(){const host=$("[data-perms]");if(host.children.length)return;names.forEach(function(item,index){const row=document.createElement("div");row.className="permission-row";const icon=document.createElementNS("http://www.w3.org/2000/svg","svg");const use=document.createElementNS("http://www.w3.org/2000/svg","use");use.setAttribute("href","#"+item[1]);icon.appendChild(use);const label=document.createElement("strong");label.textContent=item[0];const toggle=document.createElement("button");toggle.className="switch";toggle.type="button";toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",item[0]+" access");toggle.dataset.permission=String(index);toggle.setAttribute("aria-checked","false");row.append(icon,label,toggle);host.appendChild(row);});}
+  function renderAllowedDirs(dirs){const list=$("[data-fs-list]");list.replaceChildren();if(!dirs||!dirs.length){const li=document.createElement("li");li.className="fs-empty";li.textContent="No folders allowed — file tools are denied.";list.appendChild(li);return;}dirs.forEach(function(dir){const li=document.createElement("li");const label=document.createElement("span");label.textContent=dir;label.title=dir;const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";remove.dataset.action="fs-remove";remove.dataset.path=dir;remove.setAttribute("aria-label","Remove "+dir);li.append(label,remove);list.appendChild(li);});}
+  function addAllowedFolder(){const input=$("[data-fs-input]");const value=input.value.trim();if(!value){fsMessage="Enter a folder path first.";$("[data-fs-status]").textContent=fsMessage;return;}send("fs-allow-add",{path:value});input.value="";fsMessage="Adding folder…";}
   function eventNode(e){const li=document.createElement("li");const tm=document.createElement("time");tm.textContent=e.time||"";const body=document.createElement("span");body.textContent=e.body||"";li.append(tm,body);return li;}
   function renderEvents(events){const list=$("[data-event-list]");list.replaceChildren();if(!events||!events.length){const li=document.createElement("li");li.className="empty";li.textContent="No activity recorded yet.";list.appendChild(li);$("[data-latest-time]").textContent="--:--:--";$("[data-latest-event]").textContent="Manual startup is active.";return;}events.slice(-30).reverse().forEach(function(e){list.appendChild(eventNode(e));});const latestEvent=events[events.length-1];$("[data-latest-time]").textContent=latestEvent.time||"";$("[data-latest-event]").textContent=latestEvent.body||"";}
   function renderState(s){
@@ -173,6 +184,17 @@
     $("[data-count]").textContent=names.filter(function(_,i){return !!(s.mask&(1<<i));}).length+" of 5 allowed";
     const startupToggle=$("[data-startup-toggle]");if(startupToggle){startupToggle.checked=!!s.startupEnabled;startupToggle.disabled=preview;}
     const startupStatus=$("[data-startup-status]");if(startupStatus){startupStatus.textContent=s.startupEnabled?"Enabled · DeskPilot opens in the tray; the tunnel stays offline.":"Disabled · DeskPilot starts only when you open it.";}
+    const full=!!s.filesystemFull;
+    const fsToggle=$("[data-action=fs-toggle]");if(fsToggle){fsToggle.setAttribute("aria-checked",String(full));fsToggle.disabled=preview||s.external;}
+    const fsMode=$("[data-fs-mode]");if(fsMode)fsMode.textContent=full?"Full Filesystem Access — ordinary files everywhere, except DeskPilot's own files. Terminal and desktop operations are separate.":"Restricted Access — only folders below are available to Files tools. Terminal and desktop operations are not restricted by this mode.";
+    const dirCount=Array.isArray(s.allowedDirs)?s.allowedDirs.length:0;
+    const filesOn=!!(s.mask&(1<<1));
+    const fsInfo=$("[data-fs-info]");if(fsInfo)fsInfo.textContent=(full?"Full Filesystem Access":"Restricted Access")+" · "+dirCount+" allowed folder"+(dirCount===1?"":"s")+" · file tools "+(filesOn?"on":"off in Host permissions");
+    const fsWarning=$("[data-fs-warning]");if(fsWarning)fsWarning.hidden=!full;
+    renderAllowedDirs(s.allowedDirs);
+    document.querySelectorAll("[data-fs-input],[data-action=fs-add]").forEach(function(el){el.disabled=preview||s.external;});
+    document.querySelectorAll("[data-action=fs-remove]").forEach(function(btn){btn.disabled=preview||s.external;});
+    const fsStatus=$("[data-fs-status]");if(fsStatus)fsStatus.textContent=fsMessage||(full?"Full Filesystem Access is active. Switch it off here to restore restrictions.":"");
     $("[data-key-indicator]").textContent=s.saved?"Key saved locally":"No key saved";
     $("[data-key-description]").textContent=s.saved?"A credential is protected for this Windows account with DPAPI. Enter a new value only if you want to replace it.":"No saved credential. Add a runtime API key; it will be encrypted with Windows DPAPI.";
     const keyInput=$("[data-key-input]");keyInput.disabled=preview||s.running||s.external;
@@ -201,6 +223,14 @@
       case "settings":setDrawer(drawer==="settings"?"":"settings");break;
       case "activity":setDrawer(drawer==="activity"?"":"activity");break;
       case "close-drawer":setDrawer("");break;
+      case "fs-toggle":{
+        const next=!(latest&&latest.filesystemFull);
+        if(next&&!window.confirm("Enable Full Filesystem Access?\n\nConnected MCP clients will be able to read, edit and delete ordinary files anywhere this Windows account can reach. DeskPilot's own configuration, policy, installation files and credentials remain private.\n\nOnly continue if you trust the connected client."))break;
+        fsMessage="";send("filesystem-mode",{full:next});
+        break;
+      }
+      case "fs-add":addAllowedFolder();break;
+      case "fs-remove":fsMessage="Removing folder…";send("fs-allow-remove",{path:btn.dataset.path});break;
       case "toggle":
         if(latest&&latest.ready){send("stop");}
         else if(latest&&latest.saved){send("start",{key:"",remember:true});}
@@ -230,7 +260,7 @@
     }
   });
   document.addEventListener("change",function(e){if(e.target&&e.target.matches("[data-startup-toggle]")){send("startup",{enabled:e.target.checked});}});
-  window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&e.shiftKey&&e.key==="F12"){e.preventDefault();send("emergency");}});
+  window.addEventListener("keydown",function(e){if(e.key==="Enter"&&e.target&&e.target.matches("[data-fs-input]")){e.preventDefault();addAllowedFolder();return;}if(e.ctrlKey&&e.altKey&&e.shiftKey&&e.key==="F12"){e.preventDefault();send("emergency");}});
   window.openSettings=function(){setDrawer("settings")};
   window.renderState=renderState;
   send("ready");

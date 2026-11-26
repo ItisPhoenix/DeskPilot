@@ -37,6 +37,9 @@ export interface ServerConfig {
   blockedCommands?: string[];
   defaultShell?: string;
   allowedDirectories?: string[];
+  // Local-only opt-in written by the DeskPilot desktop app. Missing or any
+  // value other than "full" means restricted.
+  filesystemAccessMode?: 'restricted' | 'full';
   telemetryEnabled?: boolean; // New field for telemetry control
   fileWriteLineLimit?: number; // Line limit for file write operations
   fileReadLineLimit?: number; // Default line limit for file read operations (changed from character-based)
@@ -116,6 +119,9 @@ class ConfigManager {
   private pendingMutations: Array<(config: ServerConfig) => void> = [];
   private watcher: FSWatcher | null = null;
   private reloadTimer: NodeJS.Timeout | null = null;
+  // Polling fallback: a failed platform watcher must not leave stale permissions in effect.
+  private pollTimer: NodeJS.Timeout | null = null;
+  private configStamp = '';
   // Background saves that failed in a row, and the timer that tries them again (see scheduleSave)
   private failedSaves = 0;
   private saveRetry: NodeJS.Timeout | null = null;
@@ -196,7 +202,7 @@ class ConfigManager {
       try {
         config = await this.performConfigMutation(migrateLegacyConfig);
       } catch (error) {
-        // The settings read stay in effect, not the defaults, which allow every folder
+        // The settings read stay in effect, not the defaults; a missing allowlist denies filesystem access
         migrateLegacyConfig(config);
         this.pendingMutations.push(migrateLegacyConfig);
         return this.startWithoutSaving(config, `config.json was read, but saving to it failed (${messageOf(error)}). ` +
@@ -277,6 +283,7 @@ class ConfigManager {
       ],
       defaultShell: getDefaultShell(),
       allowedDirectories: [],
+      filesystemAccessMode: 'restricted', // Full access is opt-in through the local DeskPilot app only.
       telemetryEnabled: false, // DeskPilot does not enable upstream telemetry by default.
       fileWriteLineLimit: 50,  // Default line limit for file write operations (changed from 100)
       fileReadLineLimit: 1000,  // Default line limit for file read operations (changed from character-based)
@@ -501,6 +508,22 @@ class ConfigManager {
     this.saveRetry.unref?.();
   }
 
+  private async readConfigStamp(): Promise<string> {
+    try {
+      const stat = await fs.stat(this.configPath);
+      return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return 'missing';
+    }
+  }
+
+  private async pollConfigFromDisk(): Promise<void> {
+    const stamp = await this.readConfigStamp();
+    if (stamp === this.configStamp) return;
+    await this.reloadConfigFromDisk();
+    this.configStamp = stamp;
+  }
+
   private startConfigWatcher(): void {
     if (this.watcher) return;
     try {
@@ -515,6 +538,13 @@ class ConfigManager {
     } catch (error) {
       console.error('Failed to watch config:', error);
     }
+    // Watch events can be missed on some Windows filesystems. Poll as a
+    // fallback so revocations take effect without a server restart.
+    void this.readConfigStamp().then((stamp) => { this.configStamp = stamp; });
+    if (!this.pollTimer) {
+      this.pollTimer = setInterval(() => void this.pollConfigFromDisk(), 1000);
+      this.pollTimer.unref?.();
+    }
   }
 
   private async reloadConfigFromDisk(): Promise<void> {
@@ -528,6 +558,7 @@ class ConfigManager {
       }
       for (const mutate of this.pendingMutations) mutate(latest);
       this.config = { ...latest, version: VERSION };
+      this.configStamp = await this.readConfigStamp();
     } catch (error: any) {
       if (error?.code !== 'ENOENT') console.error('Failed to reload config:', error);
     }
