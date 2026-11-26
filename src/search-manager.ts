@@ -5,6 +5,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import { validatePath, mcpPathPrefixes, isAllowedMcpPathSync } from './tools/filesystem.js';
 import type { McpPathPrefixes } from './tools/filesystem.js';
+import { configManager } from './config-manager.js';
+import { managedPermission } from './utils/managed-permission.js';
 import { capture } from './utils/capture.js';
 import { logger } from './utils/logger.js';
 import { getRipgrepPath } from './utils/ripgrep-resolver.js';
@@ -275,10 +277,33 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
   private sessions = new Map<string, SearchSession>();
   private sessionCounter = 0;
   private cleanupTimer: NodeJS.Timeout | null = null;
+  private permissionTimer: NodeJS.Timeout | null = null;
+
+  private policyCurrent(session: SearchSession): boolean {
+    return (!process.env.DC_MANAGED_POLICY || managedPermission('start_search')) &&
+      session.pathPrefixes.policyKey === JSON.stringify(configManager.readFilesystemPolicy());
+  }
+
+  private revokeChangedSessions(): void {
+    for (const session of this.sessions.values()) {
+      if (this.policyCurrent(session)) continue;
+      this.sessions.delete(session.id);
+      session.results.length = 0;
+      this.stopSources(session);
+    }
+  }
+
+  private assertSessionPermission(session: SearchSession): void {
+    if (this.sessions.get(session.id) === session && this.policyCurrent(session)) return;
+    this.sessions.delete(session.id);
+    session.results.length = 0;
+    this.stopSources(session);
+    throw new Error('Search permissions changed; start a new authorized search.');
+  }
 
   /** Every result, from ripgrep, Excel or DOCX, passes this check before it is stored. */
   private resultAllowed(session: SearchSession, file: string): boolean {
-    return isAllowedMcpPathSync(resultPathOf(file), session.pathPrefixes);
+    return this.sessions.get(session.id) === session && isAllowedMcpPathSync(resultPathOf(file), session.pathPrefixes);
   }
 
   /**
@@ -415,6 +440,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
 
     // Only wait for ripgrep first chunk - Excel results merge asynchronously
     await firstChunk;
+    this.assertSessionPermission(session);
 
     return { ...this.stateOf(session), results: [...session.results] };
   }
@@ -437,6 +463,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     if (!session) {
       throw new Error(`Search session ${sessionId} not found`);
     }
+
+    this.assertSessionPermission(session);
 
     // Get all results (excluding internal markers)
     const allResults = session.results.filter(r => r.file !== '__LAST_READ_MARKER__');
@@ -513,6 +541,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     }
 
     await session.completed;
+    this.assertSessionPermission(session);
     return [...session.results];
   }
 
@@ -545,6 +574,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
       this.stopSources(session);
     }
     this.sessions.clear();
+    if (this.permissionTimer) clearInterval(this.permissionTimer);
+    this.permissionTimer = null;
 
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
@@ -560,6 +591,8 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     if (this.cleanupTimer) return;
     this.cleanupTimer = setInterval(() => this.cleanupSessions(), 5 * 60 * 1000);
     this.cleanupTimer.unref();
+    this.permissionTimer = setInterval(() => this.revokeChangedSessions(), 250);
+    this.permissionTimer.unref();
   }
 
   /**
@@ -574,6 +607,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
     runtime: number;
     totalResults: number;
   }> {
+    this.revokeChangedSessions();
     return Array.from(this.sessions.values()).map(session => ({
       id: session.id,
       searchType: session.options.searchType,
@@ -1250,7 +1284,7 @@ const MAX_KEPT_ERROR_CHARS = 64 * 1024;
 
   /** Something the search couldn't search: counted by kind, the first one kept as the example */
   private noteUnsearched(session: SearchSession, kind: UnsearchedKind, example: string): void {
-    const candidate = example.includes(' (os error ') ? example.split(' (os error ')[0] : example.split(':')[0];
+    const candidate = example.replace(/: [^\r\n]*$/, '');
     if (isPrefixProtectedPath(session.pathPrefixes.protected, candidate)) return;
     const noted = session.unsearched.get(kind);
     if (noted) noted.count++;

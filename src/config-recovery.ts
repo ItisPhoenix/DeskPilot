@@ -60,7 +60,13 @@ export function salvageSettings(text: string): ServerConfig {
  */
 export function buildRecoveredConfig(defaults: ServerConfig, lastRead: ServerConfig | null, text: string): ServerConfig {
   const { version: _version, ...settings } = lastRead ?? {};
-  return { ...defaults, ...settings, ...salvageSettings(text), welcomeOnboardingEligible: false, pendingWelcomeOnboarding: false };
+  return {
+    ...defaults, ...settings, ...salvageSettings(text),
+    // A damaged file cannot establish a valid owner grant. Never resurrect full access.
+    filesystemAccessMode: 'restricted',
+    ...(process.env.DC_MANAGED_POLICY ? { allowedDirectories: [] } : {}),
+    welcomeOnboardingEligible: false, pendingWelcomeOnboarding: false
+  };
 }
 
 /**

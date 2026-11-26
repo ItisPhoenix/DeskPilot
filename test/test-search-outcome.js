@@ -399,6 +399,8 @@ async function writeFiles(dir) {
     fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
     fs.writeFileSync(path.join(dir, file), content);
   };
+  // Scripted ripgrep results must name real files: unresolved paths are denied.
+  for (const name of ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']) write(name, 'needle\n');
   for (const name of ['a.txt', 'b.txt', 'c.txt']) write(path.join('max', name), 'needle\n');
   write(path.join('five', 'five.txt'), [1, 2, 3, 4, 5].map((n) => `needle ${n}`).join('\n') + '\n');
   write(path.join('context', 'context.txt'), 'before\nneedle\nafter\n');

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const TEST_HOME_PREFIX = 'dc-test-home-';
 // The variables a test process doesn't inherit (see createTestEnv); the test-home hook removes them too
-export const LEFT_OUT = ['FORCE_COLOR', 'WSL_DISTRO_NAME', 'XDG_CONFIG_HOME'];
+export const LEFT_OUT = ['FORCE_COLOR', 'WSL_DISTRO_NAME', 'XDG_CONFIG_HOME', 'DESKPILOT_CONFIG_DIR', 'DESKPILOT_INSTALL_DIR', 'DESKPILOT_LOCAL_DIAGNOSTICS'];
 const SENSITIVE_ENV = /^(CONTROL_PLANE_API_KEY|OPENAI_API_KEY|OPENAI_ADMIN_KEY|CONTROL_PLANE_TUNNEL_ID|TUNNEL_CLIENT_PROFILE|TUNNEL_CLIENT_PROFILE_FILE|NODE_OPTIONS|NODE_PATH)$/i;
 // Hides WSL's interop entry from a test process on Linux (see createTestEnv); the test-home hook loads it too
 export const NO_WSL_INTEROP = new URL('../fixtures/no-wsl-interop-preload.mjs', import.meta.url).href;

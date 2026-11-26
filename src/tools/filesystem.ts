@@ -112,9 +112,8 @@ function buildPermissionError(filePath: string, errCode: string | undefined): Er
 // unreadable configuration is a deny-all result; it must never widen access.
 async function getAllowedDirs(): Promise<string[]> {
     try {
-        const config = await configManager.getConfig();
-        if (!Array.isArray(config.allowedDirectories)) return [];
-        return config.allowedDirectories.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+        await configManager.getConfig();
+        return configManager.readFilesystemPolicy().allowed;
     } catch (error) {
         console.error('Failed to read allowed directories; denying filesystem access:', error);
         return [];
@@ -125,8 +124,8 @@ async function getAllowedDirs(): Promise<string[]> {
 // Any value other than the exact string "full" stays restricted (fail closed).
 async function isFullFilesystemAccess(): Promise<boolean> {
     try {
-        const config = await configManager.getConfig();
-        return config.filesystemAccessMode === 'full';
+        await configManager.getConfig();
+        return configManager.readFilesystemPolicy().full;
     } catch (error) {
         console.error('Failed to read filesystem access mode; denying filesystem access:', error);
         return false;
@@ -305,18 +304,21 @@ export type McpPathPrefixes = {
     full: boolean;
     allowed: string[];
     protected: string[];
+    policyKey: string;
 };
 
 /** Snapshot of the active path boundaries, taken once when a search starts. */
 export async function mcpPathPrefixes(): Promise<McpPathPrefixes> {
+    await configManager.getConfig();
+    const policy = configManager.readFilesystemPolicy();
     const allowed: string[] = [];
-    if (!(await isFullFilesystemAccess())) {
-        for (const dir of await getAllowedDirs()) {
+    if (!policy.full) {
+        for (const dir of policy.allowed) {
             const resolved = await resolveRealPath(path.resolve(expandHome(dir))).catch(() => null);
             if (resolved) allowed.push(normalizePath(resolved));
         }
     }
-    return { full: await isFullFilesystemAccess(), allowed, protected: await protectedPathPrefixes() };
+    return { full: policy.full, allowed, protected: await protectedPathPrefixes(), policyKey: JSON.stringify(policy) };
 }
 
 /**
@@ -327,13 +329,13 @@ export async function mcpPathPrefixes(): Promise<McpPathPrefixes> {
 export function isAllowedMcpPathSync(filePath: string, prefixes: McpPathPrefixes): boolean {
     try {
         const absolute = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(process.cwd(), filePath);
-        // A result that vanished between the search and this check is still
-        // checked by its written path; a symlink that resolves is checked there.
+        // Resolve the actual target, including links; unresolved results are denied.
         let resolved = absolute;
         try {
             resolved = fsSync.realpathSync.native(absolute);
         } catch {
-            // Use the written path rather than dropping a result whose file changed.
+            // Cannot prove where this result landed; fail closed.
+            return false;
         }
         let written = normalizePath(absolute);
         if (written.slice(-1) === path.sep) written = written.slice(0, -1);
@@ -399,9 +401,11 @@ async function isPathAllowed(pathToCheck: string): Promise<boolean> {
     // DeskPilot's own configuration, policy and runtime stay private in every mode.
     if (await isProtectedRuntimePath(normalizedPathToCheck)) return false;
 
-    if (await isFullFilesystemAccess()) return true;
+    await configManager.getConfig();
+    const policy = configManager.readFilesystemPolicy();
+    if (policy.full) return true;
 
-    const allowedDirectories = await getAllowedDirs();
+    const allowedDirectories = policy.allowed;
     if (allowedDirectories.length === 0) return false;
 
     // As written first: no filesystem call, so an allowed directory on an
@@ -953,6 +957,9 @@ export async function listDirectory(dirPath: string, depth: number = 2): Promise
     }
 
     await listRecursive(validPath, depth, '', true);
+    if (prefixes.policyKey !== JSON.stringify(configManager.readFilesystemPolicy())) {
+        throw new Error('Filesystem permissions changed during listing; retry with current permissions.');
+    }
     return results;
 }
 

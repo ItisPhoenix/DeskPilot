@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { existsSync, watch, type FSWatcher } from 'fs';
+import { existsSync, readFileSync, watch, type FSWatcher } from 'fs';
 import { mkdir } from 'fs/promises';
 import os from 'os';
 import lockfile from 'proper-lockfile';
@@ -561,6 +561,28 @@ class ConfigManager {
       this.configStamp = await this.readConfigStamp();
     } catch (error: any) {
       if (error?.code !== 'ENOENT') console.error('Failed to reload config:', error);
+    }
+  }
+
+  /** Security decisions use the current on-disk policy, never a cached or salvaged grant. */
+  readFilesystemPolicy(): { full: boolean; allowed: string[] } {
+    try {
+      const current = parseConfig(readFileSync(this.configPath, 'utf8'));
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return { full: false, allowed: [] };
+      }
+      const mode = current.filesystemAccessMode;
+      if (mode !== undefined && mode !== 'restricted' && mode !== 'full') {
+        return { full: false, allowed: [] };
+      }
+      const dirs = current.allowedDirectories;
+      if (dirs !== undefined && (!Array.isArray(dirs) ||
+          dirs.some(dir => typeof dir !== 'string' || !dir.trim()))) {
+        return { full: false, allowed: [] };
+      }
+      return { full: mode === 'full', allowed: dirs ?? [] };
+    } catch {
+      return { full: false, allowed: [] };
     }
   }
 

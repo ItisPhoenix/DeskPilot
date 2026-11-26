@@ -78,14 +78,14 @@ async function run() {
   };
 
   // 1. Cut short (a write cut off): everything before the cut is complete
-  await check('a truncated file keeps every complete setting before the cut, any key; the cut one gets its default', async () => {
+  await check('a truncated file preserves ordinary settings but denies managed filesystem grants', async () => {
     const before = {
       defaultShell: 'test-shell', fileReadLineLimit: 123, someUnknownKey: 'kept', abTest_x: 'B',
       usageStats: { totalToolCalls: 5 }, clientId: CLIENT_ID, allowedDirectories: ['/work'],
     };
     const damaged = `${JSON.stringify(before, null, 2).slice(0, -2)},\n  "blockedCommands": ["rm", "su`;
     await checkStartup(damaged, [...Object.keys(before), 'blockedCommands'],
-      (defaults) => ({ ...before, blockedCommands: defaults.blockedCommands }));
+      (defaults) => ({ ...before, allowedDirectories: [], blockedCommands: defaults.blockedCommands }));
   });
 
   // 2. A typo in the middle (a hand edit): what comes after it can't be read
@@ -99,7 +99,7 @@ async function run() {
 
   // 3. Nothing readable: an empty file, or NUL bytes as a crash mid-write leaves them
   for (const [kind, damaged] of [['empty', Buffer.alloc(0)], ['NUL-filled', Buffer.alloc(64)]]) {
-    await check(`an ${kind} file gets the defaults: the default blocked commands, every folder, \`echo hello\` runs`, async () => {
+    await check(`an ${kind} file gets the defaults: blocked commands, no allowed folders, \`echo hello\` runs`, async () => {
       const result = await checkStartup(damaged, ['blockedCommands', 'allowedDirectories', 'fileReadLineLimit'],
         (defaults) => pick(defaults, ['blockedCommands', 'allowedDirectories', 'fileReadLineLimit']));
       assert.strictEqual(result.echoAllowed, true, '`echo hello` was refused');
@@ -127,7 +127,7 @@ async function run() {
       });
       assert(child.status === 0 && child.result, `the child failed (${child.status}): ${child.stderr}`);
       const keys = ['allowedDirectories', 'fileReadLineLimit', 'blockedCommands', 'telemetryEnabled', 'defaultShell', 'clientId'];
-      const expected = { ...pick(lastRead, keys), allowedDirectories: ['/edited'], fileReadLineLimit: 77 };
+      const expected = { ...pick(lastRead, keys), allowedDirectories: [], fileReadLineLimit: 77 };
       assert.deepStrictEqual(pick(child.result.config, keys), expected, `the settings in effect are ${JSON.stringify(pick(child.result.config, keys))}`);
       assert.deepStrictEqual(pick(child.result.onDisk, keys), expected, `config.json was replaced with ${JSON.stringify(pick(child.result.onDisk, keys))}`);
       assert.strictEqual(child.result.onDisk.sawOnboardingPage, true, 'the write made while running must land');

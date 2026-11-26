@@ -28,7 +28,8 @@ async function worker() {
   assert.equal(config.pendingWelcomeOnboarding, false);
   assert.equal(config.clientId, '11111111-1111-4111-8111-111111111111');
   assert.deepEqual(config.blockedCommands, ['rm', 'sudo']);
-  assert.deepEqual(config.allowedDirectories, ['/safe/project']);
+  assert.deepEqual(config.allowedDirectories, process.env.DC_MANAGED_POLICY ? [] : ['/safe/project']);
+  assert.equal(config.filesystemAccessMode, 'restricted');
   assert.doesNotThrow(() => JSON.parse(readFileSync(CONFIG_FILE, 'utf8')));
   assert.equal(events.length, 1);
   assert.equal(events[0].phase, 'startup');
@@ -43,14 +44,17 @@ async function worker() {
   assert.equal(readFileSync(path.join(dir, startupBackups[0]), 'utf8'), firstCorrupt);
 
   // Corruption that appears after startup must also recover on the next durable mutation.
-  const secondCorrupt = '{"telemetryEnabled": false, BROKEN}';
+  await configManager.setValue('filesystemAccessMode', 'full');
+  const secondCorrupt = '{"filesystemAccessMode": "full", "telemetryEnabled": false, BROKEN}';
   writeFileSync(CONFIG_FILE, secondCorrupt);
+  assert.deepEqual(configManager.readFilesystemPolicy(), { full: false, allowed: [] });
   await configManager.setValue('__afterRecovery', 42);
   const finalConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
   assert.equal(finalConfig.__afterRecovery, 42);
   assert.equal(finalConfig.telemetryEnabled, false, 'explicit telemetry opt-out survives recoverable malformed JSON');
   assert.deepEqual(finalConfig.blockedCommands, ['rm', 'sudo'], 'runtime recovery preserves last parsed blocklist');
-  assert.deepEqual(finalConfig.allowedDirectories, ['/safe/project'], 'runtime recovery preserves last parsed allowlist');
+  assert.deepEqual(finalConfig.allowedDirectories, process.env.DC_MANAGED_POLICY ? [] : ['/safe/project']);
+  assert.equal(finalConfig.filesystemAccessMode, 'restricted', 'corrupt configuration cannot restore full access');
   const mutationEvent = events.slice(1).find((event) => event.phase === 'mutation');
   assert.ok(mutationEvent, 'mutation should recover the corrupt config');
   assert.equal(mutationEvent.config_bytes, Buffer.byteLength(secondCorrupt));

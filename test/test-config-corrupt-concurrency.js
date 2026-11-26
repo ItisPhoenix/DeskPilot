@@ -13,7 +13,8 @@ async function worker() {
   const config = await configManager.getConfig();
   assert.equal(configManager.isFirstRun(), false);
   assert.deepEqual(config.blockedCommands, ['rm', 'sudo']);
-  assert.deepEqual(config.allowedDirectories, ['/safe/project']);
+  assert.deepEqual(config.allowedDirectories, process.env.DC_MANAGED_POLICY ? [] : ['/safe/project']);
+  assert.equal(config.filesystemAccessMode, 'restricted');
   process.send?.({ type: 'done' });
 }
 
@@ -71,7 +72,8 @@ async function parent() {
 
     const finalConfig = JSON.parse(readFileSync(configPath, 'utf8'));
     assert.deepEqual(finalConfig.blockedCommands, ['rm', 'sudo']);
-    assert.deepEqual(finalConfig.allowedDirectories, ['/safe/project']);
+    assert.deepEqual(finalConfig.allowedDirectories, process.env.DC_MANAGED_POLICY ? [] : ['/safe/project']);
+    assert.equal(finalConfig.filesystemAccessMode, 'restricted');
     assert.equal(finalConfig.telemetryEnabled, false);
     console.log('✓ concurrent corrupt-config startup recovers once and both processes start');
   } finally {
